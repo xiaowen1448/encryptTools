@@ -12,15 +12,47 @@
     <Nullable>enable</Nullable>
     <!-- 优化配置 -->
     <Optimize>true</Optimize>
-    <DebugType>pdbonly</DebugType>
+    <DebugType>none</DebugType>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <!-- 平台支持配置 -->
     <SupportedOSPlatformVersion>6.1</SupportedOSPlatformVersion>
+  </PropertyGroup>
+  
+  <!-- 发布时的激进优化配置 -->
+  <PropertyGroup Condition="'$(PublishProtocol)' != ''">
+    <!-- 激进的代码剪裁配置 -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
+    
+    <!-- 运行时优化 -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <EventSourceSupport>false</EventSourceSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <DebuggerSupport>false</DebuggerSupport>
+    <EnableUnsafeUTF7Encoding>false</EnableUnsafeUTF7Encoding>
+    <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+    
+    <!-- 单文件发布 -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
   
   <ItemGroup>
     <Compile Remove="IconGenerator\**" />
     <EmbeddedResource Remove="IconGenerator\**" />
     <None Remove="IconGenerator\**" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <TrimmerRootDescriptor Include="ILLink.Descriptors.xml" />
+    <None Include="runtimeconfig.template.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>

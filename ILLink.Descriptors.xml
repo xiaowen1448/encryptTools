@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<linker>
+  <!-- 保留主程序集 -->
+  <assembly fullname="EncryptTools" preserve="nothing">
+    <type fullname="EncryptTools.Program" preserve="all" />
+    <type fullname="EncryptTools.MainForm" preserve="all" />
+    <type fullname="EncryptTools.Crypto.FileEncryptor" preserve="all" />
+    <type fullname="EncryptTools.Crypto.CryptoService" preserve="all" />
+    <type fullname="EncryptTools.Crypto.CryptoAlgorithm" preserve="all" />
+  </assembly>
+  
+  <!-- 最小化系统程序集保留 -->
+  <assembly fullname="System.Security.Cryptography" preserve="nothing">
+    <type fullname="System.Security.Cryptography.Aes" preserve="all" />
+    <type fullname="System.Security.Cryptography.AesCbc" preserve="all" />
+    <type fullname="System.Security.Cryptography.Rfc2898DeriveBytes" preserve="all" />
+    <type fullname="System.Security.Cryptography.RandomNumberGenerator" preserve="all" />
+  </assembly>
+  
+  <assembly fullname="System.IO.FileSystem" preserve="nothing">
+    <type fullname="System.IO.File" preserve="all" />
+    <type fullname="System.IO.FileStream" preserve="all" />
+    <type fullname="System.IO.Path" preserve="all" />
+    <type fullname="System.IO.Directory" preserve="all" />
+  </assembly>
+  
+  <assembly fullname="System.Windows.Forms" preserve="nothing">
+    <type fullname="System.Windows.Forms.Form" preserve="all" />
+    <type fullname="System.Windows.Forms.Button" preserve="all" />
+    <type fullname="System.Windows.Forms.TextBox" preserve="all" />
+    <type fullname="System.Windows.Forms.Label" preserve="all" />
+    <type fullname="System.Windows.Forms.ProgressBar" preserve="all" />
+    <type fullname="System.Windows.Forms.OpenFileDialog" preserve="all" />
+    <type fullname="System.Windows.Forms.SaveFileDialog" preserve="all" />
+    <type fullname="System.Windows.Forms.FolderBrowserDialog" preserve="all" />
+    <type fullname="System.Windows.Forms.MessageBox" preserve="all" />
+    <type fullname="System.Windows.Forms.Application" preserve="all" />
+  </assembly>
+</linker>

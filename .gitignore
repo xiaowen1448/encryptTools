@@ -1,3 +1,5 @@
 /bin
 /.vscode
 /obj
+/publish
+/publish_r2r

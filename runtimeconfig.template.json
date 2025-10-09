@@ -1,0 +1,19 @@
+{
+  "runtimeOptions": {
+    "configProperties": {
+      "System.GC.Server": false,
+      "System.GC.Concurrent": false,
+      "System.GC.RetainVM": false,
+      "System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization": false,
+      "System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault": false,
+      "System.Reflection.NullabilityInfoContext.IsSupported": false,
+      "System.ComponentModel.TypeConverter.EnableUnsafeBinaryFormatterInDesigntimeLicenseContextSerialization": false,
+      "System.Resources.ResourceManager.AllowCustomResourceTypes": false,
+      "System.Runtime.InteropServices.BuiltInComInterop.IsSupported": false,
+      "System.Runtime.InteropServices.EnableConsumingManagedCodeFromNativeHosting": false,
+      "System.StartupHookProvider.IsSupported": false,
+      "System.Text.Encoding.EnableUnsafeUTF7Encoding": false,
+      "System.Threading.Thread.EnableAutoreleasePool": false
+    }
+  }
+}
