@@ -16,19 +16,17 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <!-- 平台支持配置 -->
     <SupportedOSPlatformVersion>6.1</SupportedOSPlatformVersion>
+    <!-- 运行时标识符配置 - 仅Windows平台，因为使用了WindowsForms -->
+    <RuntimeIdentifiers>win-x64;win-x86;win-arm64</RuntimeIdentifiers>
   </PropertyGroup>
   
   <!-- 发布时的激进优化配置 -->
-  <PropertyGroup Condition="'$(PublishProtocol)' != ''">
-    <!-- 激进的代码剪裁配置 -->
-    <PublishTrimmed>true</PublishTrimmed>
-    <TrimMode>partial</TrimMode>
-    <TrimmerSingleWarn>false</TrimmerSingleWarn>
-    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
-    <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <!-- 禁用代码剪裁，因为Windows Forms不支持 -->
+    <PublishTrimmed>false</PublishTrimmed>
     
     <!-- 运行时优化 -->
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <InvariantGlobalization>false</InvariantGlobalization>
     <EventSourceSupport>false</EventSourceSupport>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
     <DebuggerSupport>false</DebuggerSupport>
@@ -41,6 +39,16 @@
     <SelfContained>true</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    
+    <!-- 额外的大小优化 -->
+    <StackTraceSupport>false</StackTraceSupport>
+    <UseNativeHttpHandler>true</UseNativeHttpHandler>
+    <OptimizationPreference>Size</OptimizationPreference>
+    
+    <!-- 移除不需要的功能以减小大小 -->
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <IlcDisableReflection>false</IlcDisableReflection>
+    <IlcOptimizationPreference>Size</IlcOptimizationPreference>
   </PropertyGroup>
   
   <ItemGroup>

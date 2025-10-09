@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <linker>
-  <!-- 保留主程序集 -->
+  <!-- 保留主程序集 - 只保留实际使用的类型 -->
   <assembly fullname="EncryptTools" preserve="nothing">
     <type fullname="EncryptTools.Program" preserve="all" />
     <type fullname="EncryptTools.MainForm" preserve="all" />
@@ -9,31 +9,53 @@
     <type fullname="EncryptTools.Crypto.CryptoAlgorithm" preserve="all" />
   </assembly>
   
-  <!-- 最小化系统程序集保留 -->
+  <!-- 最小化系统程序集保留 - 只保留加密相关 -->
   <assembly fullname="System.Security.Cryptography" preserve="nothing">
     <type fullname="System.Security.Cryptography.Aes" preserve="all" />
     <type fullname="System.Security.Cryptography.AesCbc" preserve="all" />
     <type fullname="System.Security.Cryptography.Rfc2898DeriveBytes" preserve="all" />
     <type fullname="System.Security.Cryptography.RandomNumberGenerator" preserve="all" />
+    <type fullname="System.Security.Cryptography.CryptographicException" preserve="all" />
   </assembly>
   
+  <!-- 文件系统 - 只保留必需的 -->
   <assembly fullname="System.IO.FileSystem" preserve="nothing">
     <type fullname="System.IO.File" preserve="all" />
     <type fullname="System.IO.FileStream" preserve="all" />
     <type fullname="System.IO.Path" preserve="all" />
     <type fullname="System.IO.Directory" preserve="all" />
+    <type fullname="System.IO.FileInfo" preserve="all" />
+    <type fullname="System.IO.DirectoryInfo" preserve="all" />
   </assembly>
   
+  <!-- Windows Forms - 只保留实际使用的控件 -->
   <assembly fullname="System.Windows.Forms" preserve="nothing">
     <type fullname="System.Windows.Forms.Form" preserve="all" />
     <type fullname="System.Windows.Forms.Button" preserve="all" />
     <type fullname="System.Windows.Forms.TextBox" preserve="all" />
     <type fullname="System.Windows.Forms.Label" preserve="all" />
     <type fullname="System.Windows.Forms.ProgressBar" preserve="all" />
+    <type fullname="System.Windows.Forms.ComboBox" preserve="all" />
     <type fullname="System.Windows.Forms.OpenFileDialog" preserve="all" />
     <type fullname="System.Windows.Forms.SaveFileDialog" preserve="all" />
     <type fullname="System.Windows.Forms.FolderBrowserDialog" preserve="all" />
     <type fullname="System.Windows.Forms.MessageBox" preserve="all" />
     <type fullname="System.Windows.Forms.Application" preserve="all" />
+    <type fullname="System.Windows.Forms.Control" preserve="all" />
+    <type fullname="System.Windows.Forms.ContainerControl" preserve="all" />
   </assembly>
+  
+  <!-- 移除不需要的程序集 -->
+  <assembly fullname="System.Net.Http" preserve="nothing" />
+  <assembly fullname="System.Net.HttpListener" preserve="nothing" />
+  <assembly fullname="System.Net.Mail" preserve="nothing" />
+  <assembly fullname="System.Net.Ping" preserve="nothing" />
+  <assembly fullname="System.Net.Quic" preserve="nothing" />
+  <assembly fullname="System.Net.WebSockets" preserve="nothing" />
+  <assembly fullname="System.Diagnostics.Process" preserve="nothing" />
+  <assembly fullname="System.ServiceProcess" preserve="nothing" />
+  <assembly fullname="System.Web" preserve="nothing" />
+  <assembly fullname="System.Xml.XPath" preserve="nothing" />
+  <assembly fullname="System.Xml.XmlDocument" preserve="nothing" />
+  <assembly fullname="System.Xml.XmlSerializer" preserve="nothing" />
 </linker>

@@ -1,18 +1,25 @@
 {
   "runtimeOptions": {
+    "tfm": "net8.0",
+    "frameworks": [
+      {
+        "name": "Microsoft.NETCore.App",
+        "version": "8.0.0"
+      },
+      {
+        "name": "Microsoft.WindowsDesktop.App",
+        "version": "8.0.0"
+      }
+    ],
     "configProperties": {
-      "System.GC.Server": false,
-      "System.GC.Concurrent": false,
-      "System.GC.RetainVM": false,
+      "System.Reflection.Emit.UseCollectibleAssemblyLoadContext": false,
       "System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization": false,
       "System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault": false,
-      "System.Reflection.NullabilityInfoContext.IsSupported": false,
-      "System.ComponentModel.TypeConverter.EnableUnsafeBinaryFormatterInDesigntimeLicenseContextSerialization": false,
+      "System.Globalization.Invariant": false,
+      "System.Diagnostics.Debugger.IsSupported": false,
+      "System.ComponentModel.TypeConverter.EnableUnsafeBinaryFormatterSerialization": false,
       "System.Resources.ResourceManager.AllowCustomResourceTypes": false,
-      "System.Runtime.InteropServices.BuiltInComInterop.IsSupported": false,
-      "System.Runtime.InteropServices.EnableConsumingManagedCodeFromNativeHosting": false,
-      "System.StartupHookProvider.IsSupported": false,
-      "System.Text.Encoding.EnableUnsafeUTF7Encoding": false,
+      "System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported": false,
       "System.Threading.Thread.EnableAutoreleasePool": false
     }
   }

@@ -3,3 +3,5 @@
 /obj
 /publish
 /publish_r2r
+/publish-framework-dependent
+/publish-single-file-win-x64
