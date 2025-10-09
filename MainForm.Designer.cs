@@ -64,8 +64,8 @@ namespace EncryptTools
 
             // Row 2: Options
             var optionsPanel = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
-            chkInPlace = new CheckBox { Text = "源加密", AutoSize = true };
-            chkRecursive = new CheckBox { Text = "递归处理", AutoSize = true };
+            chkInPlace = new CheckBox { Text = "源加密", AutoSize = true,Checked = true};
+            chkRecursive = new CheckBox { Text = "递归处理", AutoSize = true,Checked = true };
             chkSelectFile = new CheckBox { Text = "选择文件", AutoSize = true, Checked = false, Margin = new Padding(20, 3, 3, 3) };
             optionsPanel.Controls.Add(chkInPlace);
             optionsPanel.Controls.Add(chkRecursive);
