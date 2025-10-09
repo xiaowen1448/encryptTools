@@ -75,18 +75,32 @@ EncryptTools/
 ## 🛠️ 构建和部署
 
 ### 开发环境构建
+
+#### 框架依赖版本 (推荐用于开发)
 ```bash
 # 还原依赖
-dotnet restore
+dotnet restore EncryptTools.FrameworkDependent.csproj
 
 # 调试构建
-dotnet build
+dotnet build EncryptTools.FrameworkDependent.csproj
 
 # 发布构建
-dotnet build -c Release
+dotnet build EncryptTools.FrameworkDependent.csproj -c Release
 
 # 运行程序
-dotnet run
+dotnet run --project EncryptTools.FrameworkDependent.csproj
+```
+
+#### 自包含版本 (用于发布)
+```bash
+# 还原依赖
+dotnet restore EncryptTools.SelfContained.csproj
+
+# 调试构建
+dotnet build EncryptTools.SelfContained.csproj
+
+# 发布构建
+dotnet build EncryptTools.SelfContained.csproj -c Release
 ```
 
  
@@ -98,18 +112,34 @@ dotnet run
 
 
 ### 发布为独立可执行文件
+
+#### 使用构建脚本 (推荐)
 ```bash
-# Windows x64 (推荐)
-dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
+# 框架依赖版本 (体积小，需要.NET Runtime)
+build-framework-dependent.bat
 
-# Windows x86 (32位兼容)
-dotnet publish -c Release -r win-x86 --self-contained true /p:PublishSingleFile=true
-
-# Windows ARM64 (新架构支持)
-dotnet publish -c Release -r win-arm64 --self-contained true /p:PublishSingleFile=true
+# 自包含版本 (体积大，无需.NET Runtime)
+build-self-contained.bat
 ```
 
-发布输出位置: `bin/Release/net8.0-windows/win-x64/publish/EncryptTools.exe`
+#### 手动构建命令
+```bash
+# 框架依赖版本 - Windows x64
+dotnet publish EncryptTools.FrameworkDependent.csproj -c Release -r win-x64 --self-contained false
+
+# 自包含版本 - Windows x64 (推荐)
+dotnet publish EncryptTools.SelfContained.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
+
+# 自包含版本 - Windows x86 (32位兼容)
+dotnet publish EncryptTools.SelfContained.csproj -c Release -r win-x86 --self-contained true /p:PublishSingleFile=true
+
+# 自包含版本 - Windows ARM64 (新架构支持)
+dotnet publish EncryptTools.SelfContained.csproj -c Release -r win-arm64 --self-contained true /p:PublishSingleFile=true
+```
+
+**输出位置:**
+- 框架依赖版本: `publish-framework-dependent/EncryptTools.FrameworkDependent.exe` (~0.3MB)
+- 自包含版本: `publish-single-file-win-x64/EncryptTools.SelfContained.exe` (~68MB)
 
 
 ## 📖 使用指南

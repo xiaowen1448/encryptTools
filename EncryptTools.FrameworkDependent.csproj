@@ -11,7 +11,7 @@
     
     <!-- .NET 8 特定设置 -->
     <ImplicitUsings>disable</ImplicitUsings>
-    <Nullable>disable</Nullable>
+    <Nullable>enable</Nullable>
     
     <!-- 优化设置 -->
     <Optimize>true</Optimize>
