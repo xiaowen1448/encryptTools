@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <RootNamespace>EncryptTools</RootNamespace>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    
+    <!-- .NET 8 特定设置 -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    
+    <!-- 优化设置 -->
+    <Optimize>true</Optimize>
+    <DebugType>none</DebugType>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    
+    <!-- 平台支持 -->
+    <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <!-- 框架依赖版本的轻量级配置 -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <!-- 不使用自包含发布 -->
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    
+    <!-- 基本优化，不影响兼容性 -->
+    <Optimize>true</Optimize>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    
+    <!-- 保持所有运行时功能以确保兼容性 -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <EventSourceSupport>true</EventSourceSupport>
+    <DebuggerSupport>true</DebuggerSupport>
+    <EnableUnsafeUTF7Encoding>true</EnableUnsafeUTF7Encoding>
+    <HttpActivityPropagationSupport>true</HttpActivityPropagationSupport>
+    <MetadataUpdaterSupport>true</MetadataUpdaterSupport>
+    
+    <!-- 不进行代码剪裁 -->
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <!-- 嵌入资源 -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\app.ico" />
+  </ItemGroup>
+
+</Project>

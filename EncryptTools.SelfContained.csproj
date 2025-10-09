@@ -1,0 +1,75 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <RootNamespace>EncryptTools</RootNamespace>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    
+    <!-- .NET 8 特定设置 -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    
+    <!-- 优化设置 -->
+    <Optimize>true</Optimize>
+    <DebugType>none</DebugType>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    
+    <!-- 平台支持 -->
+    <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
+    
+    <!-- 仅支持Windows平台 -->
+    <RuntimeIdentifiers>win-x64;win-x86;win-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <!-- 自包含版本的激进优化配置 -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <!-- 禁用代码剪裁，因为Windows Forms不支持 -->
+    <PublishTrimmed>false</PublishTrimmed>
+    
+    <!-- 运行时优化 -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <EventSourceSupport>false</EventSourceSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <DebuggerSupport>false</DebuggerSupport>
+    <EnableUnsafeUTF7Encoding>false</EnableUnsafeUTF7Encoding>
+    <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+    
+    <!-- 单文件发布 -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    
+    <!-- 额外的大小优化 -->
+    <StackTraceSupport>false</StackTraceSupport>
+    <UseNativeHttpHandler>true</UseNativeHttpHandler>
+    <OptimizationPreference>Size</OptimizationPreference>
+    
+    <!-- 移除不需要的功能以减小大小 -->
+    <IlcDisableReflection>false</IlcDisableReflection>
+    <IlcOptimizationPreference>Size</IlcOptimizationPreference>
+  </PropertyGroup>
+
+  <!-- 嵌入资源 -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\app.ico" />
+  </ItemGroup>
+
+  <!-- 运行时配置模板 -->
+  <ItemGroup>
+    <Content Include="runtimeconfig.template.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- 剪裁描述符 -->
+  <ItemGroup>
+    <TrimmerRootDescriptor Include="ILLink.Descriptors.xml" />
+  </ItemGroup>
+
+</Project>

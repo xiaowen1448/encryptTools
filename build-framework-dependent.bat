@@ -32,7 +32,7 @@ echo.
 
 REM Restore NuGet packages
 echo [Step 2/4] Restoring NuGet packages...
-dotnet restore
+dotnet restore EncryptTools.FrameworkDependent.csproj
 if %errorlevel% neq 0 (
     echo [ERROR] NuGet package restore failed
     pause
@@ -43,7 +43,7 @@ echo.
 
 REM Build project
 echo [Step 3/4] Building project...
-dotnet build --configuration Release --no-restore
+dotnet build EncryptTools.FrameworkDependent.csproj --configuration Release --no-restore
 if %errorlevel% neq 0 (
     echo [ERROR] Project build failed
     pause
@@ -54,7 +54,7 @@ echo.
 
 REM Publish project (framework-dependent)
 echo [Step 4/4] Publishing project (framework-dependent mode)...
-dotnet publish --configuration Release --output "publish-framework-dependent" --no-build --verbosity minimal
+dotnet publish EncryptTools.FrameworkDependent.csproj --configuration Release --output "publish-framework-dependent" --no-build --verbosity minimal
 if %errorlevel% neq 0 (
     echo [ERROR] Project publish failed
     pause

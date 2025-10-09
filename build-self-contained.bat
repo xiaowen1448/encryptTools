@@ -59,7 +59,7 @@ echo.
 
 REM Restore NuGet packages for specific runtime
 echo [Step 2/5] Restoring NuGet packages for %rid%...
-dotnet restore --runtime %rid%
+dotnet restore EncryptTools.SelfContained.csproj --runtime %rid%
 if %errorlevel% neq 0 (
     echo [ERROR] NuGet package restore failed
     pause
@@ -70,7 +70,7 @@ echo.
 
 REM Build project for specific runtime
 echo [Step 3/5] Building project for %rid%...
-dotnet build --configuration Release --runtime %rid% --no-restore
+dotnet build EncryptTools.SelfContained.csproj --configuration Release --runtime %rid% --no-restore
 if %errorlevel% neq 0 (
     echo [ERROR] Project build failed
     pause
@@ -83,7 +83,7 @@ REM Publish project (self-contained)
 echo [Step 4/5] Publishing project (self-contained single file mode)...
 echo Creating optimized single executable file with embedded .NET Runtime...
 if exist "publish-single-file-%rid%" rmdir /s /q "publish-single-file-%rid%"
-dotnet publish --configuration Release --runtime %rid% --self-contained true --output "publish-single-file-%rid%" -p:PublishSingleFile=true --verbosity minimal
+dotnet publish EncryptTools.SelfContained.csproj --configuration Release --runtime %rid% --self-contained true --output "publish-single-file-%rid%" -p:PublishSingleFile=true --verbosity minimal
 if %errorlevel% neq 0 (
     echo [ERROR] Single file publish failed
     pause
