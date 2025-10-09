@@ -89,6 +89,14 @@ dotnet build -c Release
 dotnet run
 ```
 
+ 
+
+<img width="695" height="429" alt="image" src="https://github.com/user-attachments/assets/74789c71-6ce7-4d8b-9040-888f61fe1bb5" />
+
+<img width="1320" height="655" alt="image" src="https://github.com/user-attachments/assets/710361fc-82e4-41d2-85b8-e0b797869060" />
+
+
+
 ### 发布为独立可执行文件
 ```bash
 # Windows x64 (推荐)
@@ -102,6 +110,7 @@ dotnet publish -c Release -r win-arm64 --self-contained true /p:PublishSingleFil
 ```
 
 发布输出位置: `bin/Release/net8.0-windows/win-x64/publish/EncryptTools.exe`
+
 
 ## 📖 使用指南
 
