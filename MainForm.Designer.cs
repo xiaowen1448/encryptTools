@@ -95,9 +95,19 @@ namespace EncryptTools
 
             // Row 4: Password
             var lblPassword = new Label { Text = "密码:", AutoSize = true, Anchor = AnchorStyles.Left, TextAlign = ContentAlignment.MiddleLeft };
-            txtPassword = new TextBox { UseSystemPasswordChar = true, Width = 200, Anchor = AnchorStyles.Left };
+            var passwordPanel = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
+            txtPassword = new TextBox { UseSystemPasswordChar = true, Width = 200 };
+            cmbPasswordType = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 80, Margin = new Padding(10, 3, 3, 3) };
+            cmbPasswordType.Items.AddRange(new object[] { "输入密码", "密码文件" });
+            cmbPasswordType.SelectedIndex = 0;
+            btnSavePassword = new Button { Text = "保存密码", AutoSize = true, Margin = new Padding(10, 3, 3, 3) };
+            btnImportPassword = new Button { Text = "导入密码文件", AutoSize = true, Margin = new Padding(10, 3, 3, 3), Visible = false };
+            passwordPanel.Controls.Add(txtPassword);
+            passwordPanel.Controls.Add(cmbPasswordType);
+            passwordPanel.Controls.Add(btnSavePassword);
+            passwordPanel.Controls.Add(btnImportPassword);
             layout.Controls.Add(lblPassword, 0, 4);
-            layout.Controls.Add(txtPassword, 1, 4);
+            layout.Controls.Add(passwordPanel, 1, 4);
 
             // Row 5: Buttons
             var buttonsPanel = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
@@ -132,6 +142,10 @@ namespace EncryptTools
             btnDecrypt.Click += async (_, __) => await StartProcessAsync(false);
             btnCancel.Click += (_, __) => CancelProcessing();
             cmbAlgorithm.SelectedIndexChanged += (_, __) => UpdateKeySizeAvailability();
+            cmbPasswordType.SelectedIndexChanged += (_, __) => UpdatePasswordTypeUI();
+            txtPassword.TextChanged += (_, __) => OnPasswordTextChanged();
+            btnSavePassword.Click += (_, __) => SavePassword();
+            btnImportPassword.Click += (_, __) => ImportPasswordFile();
         }
 
         private TextBox txtSourcePath = null!;
@@ -149,5 +163,8 @@ namespace EncryptTools
         private TextBox txtLog = null!;
         private ComboBox cmbKeySize = null!;
         private CheckBox chkSelectFile = null!;
+        private ComboBox cmbPasswordType = null!;
+        private Button btnSavePassword = null!;
+        private Button btnImportPassword = null!;
     }
 }
