@@ -9,15 +9,15 @@ namespace EncryptTools
 {
     public class FileEncryptorOptions
     {
-        public string SourcePath { get; set; }
-        public string OutputRoot { get; set; }
+        public required string SourcePath { get; set; }
+        public required string OutputRoot { get; set; }
         public bool InPlace { get; set; }
         public bool Recursive { get; set; }
         public CryptoAlgorithm Algorithm { get; set; }
-        public string Password { get; set; }
+        public required string Password { get; set; }
         public int Iterations { get; set; } = 200_000;
         public int AesKeySizeBits { get; set; } = 256;
-        public Action<string> Log { get; set; }
+        public required Action<string> Log { get; set; }
     }
 
     public class FileEncryptor

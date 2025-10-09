@@ -315,7 +315,7 @@ namespace EncryptTools
             
             await outFs.WriteAsync(nonce, 0, nonce.Length, ct);
             
-            using var aesGcm = new AesGcm(key);
+            using var aesGcm = new AesGcm(key, 16); // 明确指定16字节的认证标签大小
             using var inputFs = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, FileOptions.SequentialScan);
             
             var fileSize = inputFs.Length;
@@ -355,7 +355,7 @@ namespace EncryptTools
             var nonce = new byte[12];
             await inFs.ReadAsync(nonce, 0, nonce.Length, ct);
             
-            using var aesGcm = new AesGcm(key);
+            using var aesGcm = new AesGcm(key, 16); // 明确指定16字节的认证标签大小
             
             var fileSize = inFs.Length - nonce.Length;
             var totalBytesRead = 0L;

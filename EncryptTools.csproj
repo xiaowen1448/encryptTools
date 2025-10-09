@@ -14,6 +14,8 @@
     <Optimize>true</Optimize>
     <DebugType>pdbonly</DebugType>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- 平台支持配置 -->
+    <SupportedOSPlatformVersion>6.1</SupportedOSPlatformVersion>
   </PropertyGroup>
   
   <ItemGroup>

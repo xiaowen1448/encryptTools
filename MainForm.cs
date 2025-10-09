@@ -4,15 +4,17 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace EncryptTools
 {
+    [SupportedOSPlatform("windows6.1")]
     public partial class MainForm : Form
     {
-        private CancellationTokenSource _cts;
+        private CancellationTokenSource? _cts;
 
         public MainForm()
         {
@@ -122,7 +124,7 @@ namespace EncryptTools
                 var options = new FileEncryptorOptions
                 {
                     SourcePath = sourcePath,
-                    OutputRoot = inPlace ? null : outputPath,
+                    OutputRoot = inPlace ? "" : outputPath, // 使用空字符串而不是null
                     InPlace = inPlace,
                     Recursive = recursive,
                     Algorithm = algorithm,
@@ -135,12 +137,12 @@ namespace EncryptTools
                 var encryptor = new FileEncryptor(options);
                 if (encrypt)
                 {
-                    await encryptor.EncryptAsync(progress, _cts.Token);
+                    await encryptor.EncryptAsync(progress, _cts?.Token ?? CancellationToken.None);
                     AppendLog("加密完成");
                 }
                 else
                 {
-                    await encryptor.DecryptAsync(progress, _cts.Token);
+                    await encryptor.DecryptAsync(progress, _cts?.Token ?? CancellationToken.None);
                     AppendLog("解密完成");
                 }
             }

@@ -22,8 +22,8 @@ namespace EncryptTools
             components = new Container();
             this.Text = "加密工具 (EncryptTools)";
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.Size = new System.Drawing.Size(570, 350);
-            this.MinimumSize = new System.Drawing.Size(470, 250);
+            this.Size = new System.Drawing.Size(660, 350);
+            this.MinimumSize = new System.Drawing.Size(560, 250);
             this.AutoScaleMode = AutoScaleMode.Font;
             this.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F);
 
