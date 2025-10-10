@@ -45,9 +45,9 @@
     <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
 
-  <!-- 嵌入资源 -->
+  <!-- 将 Assets 文件夹复制到输出目录（用于运行时加载）-->
   <ItemGroup>
-    <EmbeddedResource Include="Assets\app.ico" />
+    <Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

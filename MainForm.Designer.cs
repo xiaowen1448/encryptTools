@@ -8,7 +8,6 @@ namespace EncryptTools
     partial class MainForm
     {
         private IContainer components = null!;
-        private PictureBox picLogo = null!;
 
         protected override void Dispose(bool disposing)
         {
@@ -28,6 +27,22 @@ namespace EncryptTools
             this.MinimumSize = new System.Drawing.Size(560, 250);
             this.AutoScaleMode = AutoScaleMode.Font;
             this.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F);
+            
+            // 设置窗口图标（标题栏和缩略图）
+            try
+            {
+                string exePath = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                string iconPath = System.IO.Path.Combine(exePath, "Assets", "app-mini16.ico");
+                
+                if (System.IO.File.Exists(iconPath))
+                {
+                    this.Icon = new Icon(iconPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("加载窗口图标失败: " + ex.Message);
+            }
 
             var layout = new TableLayoutPanel
             {
@@ -80,7 +95,7 @@ namespace EncryptTools
             // Row 3: Algorithm + AES key size + iterations
             var lblAlgorithm = new Label { Text = "算法:", AutoSize = true, Anchor = AnchorStyles.Left, TextAlign = ContentAlignment.MiddleLeft };
             cmbAlgorithm = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110 };
-            cmbAlgorithm.Items.AddRange(new object[] { "AES-CBC", "AES-GCM(小文件)", "TripleDES", "XOR(演示)" });
+            cmbAlgorithm.Items.AddRange(new object[] { "AES-CBC", "AES-GCM", "TripleDES", "XOR(演示)" });
             cmbAlgorithm.SelectedIndex = 0;
             var algoPanel = new FlowLayoutPanel { AutoSize = true, Width = 500, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
             var lblKeySize = new Label { Text = "AES密钥长度:", AutoSize = true, Margin = new Padding(10, 3, 3, 3), TextAlign = ContentAlignment.MiddleLeft };
@@ -138,30 +153,6 @@ namespace EncryptTools
             layout.SetColumnSpan(txtLog, 2);
 
             Controls.Add(layout);
-
-            // 加载并显示 Logo
-            try
-            {
-                string exePath = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
-                string iconPath = System.IO.Path.Combine(exePath, "Assets", "app.ico");
-                
-                if (System.IO.File.Exists(iconPath))
-                {
-                    picLogo = new PictureBox
-                    {
-                        Image = Image.FromFile(iconPath),
-                        Size = new System.Drawing.Size(32, 32),
-                        Location = new System.Drawing.Point(10, 10),
-                        SizeMode = PictureBoxSizeMode.StretchImage
-                    };
-                    Controls.Add(picLogo);
-                    picLogo.BringToFront();
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine("加载Logo失败: " + ex.Message);
-            }
 
             // Events
             btnBrowseSource.Click += (_, __) => BrowseSource();
