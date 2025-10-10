@@ -89,10 +89,7 @@ dir "publish-framework-dependent" /s /-c | find "File(s)"
 echo.
 
 REM Ask if open publish folder
-set /p openFolder="Open publish folder? (Y/N): "
-if /i "%openFolder%"=="Y" (
-    explorer "publish-framework-dependent"
-)
 
-echo Press any key to exit...
-pause >nul
+explorer "publish-framework-dependent"
+
+
