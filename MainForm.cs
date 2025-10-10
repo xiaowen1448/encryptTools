@@ -72,6 +72,7 @@ namespace EncryptTools
                 var outputPath = txtOutputPath.Text.Trim();
                 var inPlace = chkInPlace.Checked;
                 var recursive = chkRecursive.Checked;
+                var randomName = chkRandomName.Checked;
                 var algorithmText = cmbAlgorithm.SelectedItem?.ToString() ?? "AES-CBC";
                 // 优先使用导入的密码，如果没有则使用输入框中的密码
                 var password = _importedPassword ?? txtPassword.Text;
@@ -138,6 +139,7 @@ namespace EncryptTools
                     OutputRoot = inPlace ? "" : outputPath, // 使用空字符串而不是null
                     InPlace = inPlace,
                     Recursive = recursive,
+                    RandomizeFileName = randomName,
                     Algorithm = algorithm,
                     Password = password,
                     Iterations = iterations,
@@ -209,6 +211,7 @@ namespace EncryptTools
             chkInPlace.Enabled = enable;
             chkRecursive.Enabled = enable;
             chkSelectFile.Enabled = enable;
+            chkRandomName.Enabled = enable;
             cmbAlgorithm.Enabled = enable;
             txtPassword.Enabled = enable;
             cmbPasswordType.Enabled = enable;

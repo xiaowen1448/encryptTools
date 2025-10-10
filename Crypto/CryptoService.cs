@@ -91,8 +91,8 @@ namespace EncryptTools
             using var outFs = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize, fileOptions);
             using var bw = new BinaryWriter(outFs);
 
-            // Header (ENC2)
-            bw.Write(System.Text.Encoding.ASCII.GetBytes("ENC2"));
+            // Header (ENC3) - 增加原始文件名元数据
+            bw.Write(System.Text.Encoding.ASCII.GetBytes("ENC3"));
             bw.Write((byte)algorithm);
             bw.Write(iterations);
             bw.Write(salt.Length);
@@ -100,6 +100,12 @@ namespace EncryptTools
             // Write key size for AES algorithms; others write 0
             var keySizeToWrite = (algorithm == CryptoAlgorithm.AesCbc || algorithm == CryptoAlgorithm.AesGcm) ? aesKeySizeBits : 0;
             bw.Write(keySizeToWrite);
+
+            // 写入原始文件名（仅文件名，不含路径），UTF-8编码
+            var originalName = Path.GetFileName(inputPath);
+            var nameBytes = System.Text.Encoding.UTF8.GetBytes(originalName);
+            bw.Write(nameBytes.Length);
+            bw.Write(nameBytes);
 
             switch (algorithm)
             {
@@ -120,7 +126,12 @@ namespace EncryptTools
             }
         }
 
-        public async Task DecryptFileAsync(
+        public class DecryptResult
+        {
+            public string? OriginalFileName { get; set; }
+        }
+
+        public async Task<DecryptResult> DecryptFileAsync(
             string inputPath,
             string outputPath,
             string password,
@@ -142,12 +153,28 @@ namespace EncryptTools
             var saltLen = br.ReadInt32();
             var salt = br.ReadBytes(saltLen);
             int aesKeySizeBits = 256; // default for ENC1
+            string? originalFileName = null;
             if (headerVersion == (byte)'2')
             {
                 aesKeySizeBits = br.ReadInt32();
                 if (aesKeySizeBits == 0 && (alg == CryptoAlgorithm.AesCbc || alg == CryptoAlgorithm.AesGcm))
                 {
                     aesKeySizeBits = 256; // fallback safety
+                }
+            }
+            else if (headerVersion == (byte)'3')
+            {
+                aesKeySizeBits = br.ReadInt32();
+                if (aesKeySizeBits == 0 && (alg == CryptoAlgorithm.AesCbc || alg == CryptoAlgorithm.AesGcm))
+                {
+                    aesKeySizeBits = 256; // fallback safety
+                }
+                // 读取原始文件名
+                var nameLen = br.ReadInt32();
+                if (nameLen > 0 && nameLen < 1024 * 4) // 简单防御
+                {
+                    var nameBytes = br.ReadBytes(nameLen);
+                    originalFileName = System.Text.Encoding.UTF8.GetString(nameBytes);
                 }
             }
 
@@ -172,6 +199,7 @@ namespace EncryptTools
                 default:
                     throw new NotSupportedException("不支持的算法");
             }
+            return new DecryptResult { OriginalFileName = originalFileName };
         }
 
         private static byte[] RandomBytes(int len)

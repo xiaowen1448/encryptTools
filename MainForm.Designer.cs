@@ -66,10 +66,12 @@ namespace EncryptTools
             var optionsPanel = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
             chkInPlace = new CheckBox { Text = "源加密", AutoSize = true,Checked = true};
             chkRecursive = new CheckBox { Text = "递归处理", AutoSize = true,Checked = true };
-            chkSelectFile = new CheckBox { Text = "选择文件", AutoSize = true, Checked = false, Margin = new Padding(20, 3, 3, 3) };
+            chkSelectFile = new CheckBox { Text = "处理单文件", AutoSize = true, Checked = false, Margin = new Padding(20, 3, 3, 3) };
+            chkRandomName = new CheckBox { Text = "随机文件名", AutoSize = true, Checked = false, Margin = new Padding(20, 3, 3, 3) };
             optionsPanel.Controls.Add(chkInPlace);
             optionsPanel.Controls.Add(chkRecursive);
             optionsPanel.Controls.Add(chkSelectFile);
+            optionsPanel.Controls.Add(chkRandomName);
             layout.Controls.Add(new Label { Text = "选项:", AutoSize = true, Anchor = AnchorStyles.Left, TextAlign = ContentAlignment.MiddleLeft }, 0, 2);
             layout.Controls.Add(optionsPanel, 1, 2);
 
@@ -166,5 +168,6 @@ namespace EncryptTools
         private ComboBox cmbPasswordType = null!;
         private Button btnSavePassword = null!;
         private Button btnImportPassword = null!;
+        private CheckBox chkRandomName = null!;
     }
 }
