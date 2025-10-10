@@ -90,6 +90,6 @@ echo.
 
 REM Ask if open publish folder
 
-explorer "publish-framework-dependent"
+REM  explorer "publish-framework-dependent"
 
 
