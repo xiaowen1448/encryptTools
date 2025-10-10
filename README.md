@@ -2,6 +2,64 @@
 
 一个基于 .NET 8 的现代化高性能 Windows 图形界面加密工具，支持多种加密算法和批量文件处理。
 
+软件页面如下
+
+<img width="824" height="438" alt="image" src="https://github.com/user-attachments/assets/53f1899d-b439-4a41-b317-a0f3172290ec" />
+
+使用密码加密或者保存密码为文件，使用密码文件进行加密
+
+<img width="1393" height="655" alt="image" src="https://github.com/user-attachments/assets/98748856-f15b-4aca-bd03-4a46465a9728" />
+
+加密完成
+
+<img width="816" height="441" alt="image" src="https://github.com/user-attachments/assets/4db52f85-fb07-40c1-8d0e-81702535ffaf" />
+
+解密完成
+
+
+<img width="824" height="438" alt="image" src="https://github.com/user-attachments/assets/743ee656-0257-4008-9e82-0327a9e55685" />
+
+
+加密解密速度
+
+硬盘参数为M2固态，测速参数如下：
+
+<img width="621" height="580" alt="image" src="https://github.com/user-attachments/assets/ae91d426-4191-4428-a352-a884422800c1" />
+
+文件大小文win10系统镜像,d大约6.5GB
+
+<img width="1356" height="815" alt="image" src="https://github.com/user-attachments/assets/f8b75ece-52c1-4545-a313-f524549fb357" />
+
+M2固态环境下，加密源文件，仅用13s 完成
+<img width="1395" height="741" alt="image" src="https://github.com/user-attachments/assets/d98446e0-6584-4064-87d3-b696f858a3ba" />
+
+解密仅需要9s 
+
+<img width="1335" height="729" alt="image" src="https://github.com/user-attachments/assets/48eb416f-84c7-466d-bb95-98a3e3ac44eb" />
+
+
+批量处理文件，这里测试的是296个图片，共计2.79G，处理速度如下图
+
+
+<img width="1599" height="950" alt="image" src="https://github.com/user-attachments/assets/6e5e86db-8cc9-4105-b72b-9af1c31f5c25" />
+
+
+<img width="1634" height="979" alt="image" src="https://github.com/user-attachments/assets/3c508941-bdee-4195-934e-7276868f6f83" />
+
+[09:43:15] 开始加密到[09:43:35] 加密完成，296个文件，共计加密时间为20S，平均每秒处理15个文件，
+
+
+解密速度
+
+<img width="1626" height="878" alt="image" src="https://github.com/user-attachments/assets/4ef482b2-0e0d-4db3-9ba4-535373c40619" />
+
+<img width="1635" height="919" alt="image" src="https://github.com/user-attachments/assets/434e270f-ce07-460a-8f91-ccbc4e0ca0e7" />
+
+[09:47:56] 开始解密到[09:48:17] 解密完成，共计花费时间为21s,平均每秒处理15个文件
+
+
+
+
 ## 🚀 主要特性
 
 ### 加密算法支持
@@ -103,13 +161,6 @@ dotnet build EncryptTools.SelfContained.csproj
 dotnet build EncryptTools.SelfContained.csproj -c Release
 ```
 
- 
-
-<img width="695" height="429" alt="image" src="https://github.com/user-attachments/assets/74789c71-6ce7-4d8b-9040-888f61fe1bb5" />
-
-<img width="1320" height="655" alt="image" src="https://github.com/user-attachments/assets/710361fc-82e4-41d2-85b8-e0b797869060" />
-
-
 
 ### 发布为独立可执行文件
 
@@ -142,140 +193,4 @@ dotnet publish EncryptTools.SelfContained.csproj -c Release -r win-arm64 --self-
 - 自包含版本: `publish-single-file-win-x64/EncryptTools.SelfContained.exe` (~68MB)
 
 
-## 📖 使用指南
 
-### 基本操作
-1. **选择源路径**: 点击"浏览"选择文件或文件夹
-2. **设置输出路径**: 指定加密后文件的存储位置
-3. **选择算法**: 推荐使用 AES-CBC
-4. **设置密码**: 使用强密码确保安全性
-5. **开始处理**: 点击"加密"或"解密"按钮
-
-### 高级选项
-- **递归处理**: 处理文件夹内所有子文件
-- **原地处理**: 在原文件位置生成加密文件
-- **迭代次数**: 调整 PBKDF2 迭代次数（默认 200,000）
-
-## 🔒 文件格式规范
-
-### 加密文件头结构
-```
-Magic: "ENC2" (4 bytes)
-Algorithm: 1 byte
-Iterations: 4 bytes (int32)
-Salt Length: 4 bytes (int32)
-Salt: N bytes
-Key Size: 4 bytes (int32, AES only)
-```
-
-### 算法特定数据
-- **AES-CBC**: IV + 加密数据
-- **AES-GCM**: Nonce + 加密数据 + 认证标签 (原生支持)
-- **3DES**: IV + 加密数据  
-- **XOR**: 直接加密数据
-
-## ⚡ 性能优化
-
-### 已实现的优化
-1. **大缓冲区**: 4MB I/O 缓冲区减少系统调用
-2. **密钥缓存**: 线程本地缓存避免重复密钥派生
-3. **异步处理**: 非阻塞 UI 和文件操作
-4. **内存优化**: ArrayPool 流式处理支持大文件
-5. **对象池**: AES/3DES 对象复用减少 GC 压力
-6. **原生 AES-GCM**: 硬件加速的认证加密
-
-### 性能对比
-- 缓冲区优化: 提升 50-100% I/O 性能
-- 密钥缓存: 减少 90% 重复计算时间
-- 异步处理: UI 响应性提升 100%
-- 对象池: 减少 70% GC 开销
-- ArrayPool: 降低 80% 内存分配
-- 原生 AES-GCM: 比回退方案快 200%+
-
-## 🔐 安全注意事项
-
-### 密码安全
-- 使用至少 12 位强密码
-- 包含大小写字母、数字和特殊字符
-- 避免使用常见密码或个人信息
-
-### 算法选择
-- **生产环境**: 推荐 AES-GCM（认证加密）或 AES-CBC
-- **高安全需求**: 使用 AES-GCM 256 位密钥
-- **兼容性需求**: 使用 AES-CBC 256 位密钥
-- **避免使用**: XOR 算法（仅供演示）
-
-### 文件处理
-- 重要文件请先备份
-- 谨慎使用原地处理模式
-- 定期验证加密文件完整性
-
-## 🐛 故障排除
-
-### 常见问题
-1. **构建失败**: 确保安装 .NET 8 SDK
-2. **运行错误**: 检查目标机器 .NET 8 Runtime 版本
-3. **性能问题**: 确认磁盘空间和内存充足
-4. **解密失败**: 验证密码和算法设置
-5. **AES-GCM 错误**: 确保文件完整性和认证标签正确
-
-### 日志分析
-程序运行时会在界面底部显示详细日志，包括：
-- 文件处理进度
-- 错误信息和警告
-- 性能统计信息
-
-## 💻 技术栈
-
-### 核心技术
-- **.NET 8**: 现代化的跨平台运行时
-- **Windows Forms**: 成熟的桌面 UI 框架
-- **System.Security.Cryptography**: 原生加密库
-- **System.Buffers**: 高性能内存管理
-- **C# 12**: 最新语言特性和语法
-
-### 关键特性
-- **可空引用类型**: 编译时空引用检查
-- **异步编程**: Task-based 异步模式
-- **内存管理**: ArrayPool 和对象池优化
-- **现代语法**: using 声明、模式匹配等
-
-## 📋 版本历史
-
-### v2.0 (.NET 8 版本)
-- ✅ 升级到 .NET 8 运行时
-- ✅ 原生 AES-GCM 支持
-- ✅ 可空引用类型
-- ✅ 对象池优化
-- ✅ ArrayPool 内存管理
-- ✅ 4MB 缓冲区优化
-- ✅ ARM64 架构支持
-
-### v1.0 (.NET Framework 4.8 版本)
-- ✅ 基础加密功能
-- ✅ AES-CBC/3DES/XOR 算法
-- ✅ 文件夹递归处理
-- ✅ 进度显示和日志
-- ✅ 密钥缓存优化
-
-## 📄 许可证
-
-本项目采用 MIT 许可证，详见 LICENSE 文件。
-
-## 🤝 贡献指南
-
-欢迎提交 Issue 和 Pull Request 来改进项目：
-1. Fork 项目仓库
-2. 创建功能分支
-3. 提交更改
-4. 发起 Pull Request
-
-## 📞 技术支持
-
-如有问题或建议，请通过以下方式联系：
-- 提交 GitHub Issue
-- 发送邮件至项目维护者
-
----
-
-**注意**: 本工具仅供学习和合法用途使用，请遵守当地法律法规。
