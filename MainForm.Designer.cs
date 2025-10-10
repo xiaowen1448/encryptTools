@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using System.Drawing;
 using System.Windows.Forms;
@@ -7,6 +8,7 @@ namespace EncryptTools
     partial class MainForm
     {
         private IContainer components = null!;
+        private PictureBox picLogo = null!;
 
         protected override void Dispose(bool disposing)
         {
@@ -136,6 +138,30 @@ namespace EncryptTools
             layout.SetColumnSpan(txtLog, 2);
 
             Controls.Add(layout);
+
+            // 加载并显示 Logo
+            try
+            {
+                string exePath = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                string iconPath = System.IO.Path.Combine(exePath, "Assets", "app.ico");
+                
+                if (System.IO.File.Exists(iconPath))
+                {
+                    picLogo = new PictureBox
+                    {
+                        Image = Image.FromFile(iconPath),
+                        Size = new System.Drawing.Size(32, 32),
+                        Location = new System.Drawing.Point(10, 10),
+                        SizeMode = PictureBoxSizeMode.StretchImage
+                    };
+                    Controls.Add(picLogo);
+                    picLogo.BringToFront();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("加载Logo失败: " + ex.Message);
+            }
 
             // Events
             btnBrowseSource.Click += (_, __) => BrowseSource();
