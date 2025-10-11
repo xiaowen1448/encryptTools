@@ -2,6 +2,28 @@
 
 一个基于 .NET 8 的现代化高性能 Windows 图形界面加密工具，支持多种加密算法和批量文件处理。
 
+环境要求WIN10,.net8环境，
+
+迷你版本运行需要安装.net环境如下提示：
+
+<img width="811" height="571" alt="image" src="https://github.com/user-attachments/assets/9763e7b7-61bc-47fd-8536-be55fc043c1e" />
+
+安装.net
+
+<img width="539" height="365" alt="image" src="https://github.com/user-attachments/assets/576f311d-1d87-4f15-bbe5-44c741cbc9b2" />
+
+<img width="645" height="466" alt="image" src="https://github.com/user-attachments/assets/d5115de9-390f-4461-ac5d-f8b26cd77a9a" />
+
+<img width="645" height="460" alt="image" src="https://github.com/user-attachments/assets/fe2673d2-09fc-4e73-ae65-bf5ae864fdca" />
+
+<img width="925" height="569" alt="image" src="https://github.com/user-attachments/assets/a449307f-dbdf-47dc-9d9a-201caf0f1801" />
+
+
+完整版运行如下：
+
+<img width="864" height="556" alt="image" src="https://github.com/user-attachments/assets/a6bebf2e-20a0-47fb-a139-1df5ab6921ef" />
+
+
 软件页面如下
 
 <img width="824" height="438" alt="image" src="https://github.com/user-attachments/assets/53f1899d-b439-4a41-b317-a0f3172290ec" />
