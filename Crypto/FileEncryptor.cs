@@ -13,7 +13,20 @@ namespace EncryptTools
         public required string OutputRoot { get; set; }
         public bool InPlace { get; set; }
         public bool Recursive { get; set; }
-        public bool RandomizeFileName { get; set; } // 新增：加密输出使用随机文件名
+        public bool RandomizeFileName { get; set; }
+        public int RandomFileNameLength { get; set; } = 32;  // ← 新增：可配置长度
+
+        // 说明：随机文件名长度
+        // 默认值：16
+        // 类型：int
+        // 有效范围：1-255 (Windows 文件名限制)
+        // 推荐值：
+
+        // 8 - 短名，低安全性
+        // 16 - 中等，推荐默认
+        // 24 - 较长，高安全性
+        // 32 - 完整GUID十六进制      
+        public string RandomFileNameFormat { get; set; } = "hex";  // ← 新增：格式选择 (hex/alphanumeric/guid)
         public CryptoAlgorithm Algorithm { get; set; }
         public required string Password { get; set; }
         public int Iterations { get; set; } = 200_000;
@@ -51,7 +64,6 @@ namespace EncryptTools
                     progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
                 }), ct);
 
-                // 原地加密：仅在成功生成非空输出文件时删除源文件
                 if (_options.InPlace)
                 {
                     try
@@ -95,13 +107,11 @@ namespace EncryptTools
                     progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
                 }), ct);
 
-                // 如果密文中包含原始文件名，解密后恢复文件名
                 if (!string.IsNullOrWhiteSpace(result?.OriginalFileName))
                 {
                     try
                     {
                         var targetDir = Path.GetDirectoryName(outFile)!;
-                        // 清洗原始文件名，去除Windows非法字符、保留扩展名、避免保留字
                         var restoredName = SanitizeFileName(result!.OriginalFileName);
                         if (!string.Equals(restoredName, result!.OriginalFileName, StringComparison.Ordinal))
                         {
@@ -120,7 +130,6 @@ namespace EncryptTools
                         {
                             File.Move(outFile, finalPath);
                             _options.Log?.Invoke($"已恢复原始文件名: {Path.GetFileName(finalPath)}");
-                            // 重命名后更新 outFile 变量，后续删除源加密文件时才能正确检测输出文件是否存在
                             outFile = finalPath;
                             _options.Log?.Invoke($"最终输出文件: {finalPath}");
                         }
@@ -131,12 +140,10 @@ namespace EncryptTools
                     }
                 }
 
-                // 原地解密：仅在成功生成非空输出文件时删除源 .enc 文件
                 if (_options.InPlace)
                 {
                     try
                     {
-                        // 注意：如果发生了文件名恢复（重命名），outFile 已被更新为最终路径
                         if (File.Exists(outFile) && new FileInfo(outFile).Length > 0)
                         {
                             File.Delete(file);
@@ -177,7 +184,10 @@ namespace EncryptTools
                 {
                     var dir = Path.GetDirectoryName(source)!;
                     var ext = GetEncryptedExtension(_options.Algorithm);
-                    var name = _options.RandomizeFileName ? GenerateRandomName(16) : Path.GetFileName(source);
+                    // ← 使用可配置的长度和格式
+                    var name = _options.RandomizeFileName 
+                        ? GenerateRandomName(_options.RandomFileNameLength, _options.RandomFileNameFormat)
+                        : Path.GetFileName(source);
                     return Path.Combine(dir, name + ext);
                 }
                 else
@@ -192,7 +202,9 @@ namespace EncryptTools
                 var targetDir = Path.Combine(root, Path.GetDirectoryName(relative) ?? string.Empty);
                 var fileName = Path.GetFileName(source);
                 var outName = encrypt
-                    ? (_options.RandomizeFileName ? GenerateRandomName(16) : fileName) + GetEncryptedExtension(_options.Algorithm)
+                    ? (_options.RandomizeFileName 
+                        ? GenerateRandomName(_options.RandomFileNameLength, _options.RandomFileNameFormat)  // ← 改这里
+                        : fileName) + GetEncryptedExtension(_options.Algorithm)
                     : DeriveDecryptedName(fileName);
                 return Path.Combine(targetDir, outName);
             }
@@ -222,7 +234,6 @@ namespace EncryptTools
                     return encryptedName.Substring(0, encryptedName.Length - ext.Length);
                 }
             }
-            // If encrypted file contains original extension inside header, CryptoService will restore it; fallback:
             return encryptedName + ".dec";
         }
 
@@ -238,16 +249,63 @@ namespace EncryptTools
             };
         }
 
-        private static string GenerateRandomName(int length)
+        // ====== 改进的随机文件名生成方法 ======
+        private static string GenerateRandomName(int length, string format = "hex")
         {
-            // 使用GUID生成随机名称，截断到指定长度
-            var guid = Guid.NewGuid().ToString("N");
+            // 验证长度
+            if (length <= 0)
+            {
+                length = 16;  // 默认长度
+            }
+
+            return format.ToLower() switch
+            {
+                "hex" => GenerateHexName(length),
+                "alphanumeric" => GenerateAlphanumericName(length),
+                "guid" => GenerateGuidName(length),
+                _ => GenerateHexName(length)
+            };
+        }
+
+        /// <summary>
+        /// 生成十六进制随机名称（最安全）
+        /// 字符集：0-9, a-f
+        /// </summary>
+        private static string GenerateHexName(int length)
+        {
+            var guid = Guid.NewGuid().ToString("N");  // 32个十六进制字符，无连字符
             return guid.Length > length ? guid.Substring(0, length) : guid;
+        }
+
+        /// <summary>
+        /// 生成字母数字随机名称
+        /// 字符集：A-Z, a-z, 0-9
+        /// </summary>
+        private static string GenerateAlphanumericName(int length)
+        {
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+            var random = new Random();
+            return new string(Enumerable.Range(0, length)
+                .Select(_ => chars[random.Next(chars.Length)])
+                .ToArray());
+        }
+
+        /// <summary>
+        /// 生成GUID格式的随机名称
+        /// 如果长度 >= 36，返回完整 GUID 格式（含连字符）
+        /// 否则返回十六进制名称
+        /// </summary>
+        private static string GenerateGuidName(int length)
+        {
+            if (length >= 36)
+            {
+                return Guid.NewGuid().ToString();  // xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+            }
+            return GenerateHexName(length);
         }
 
         private static string SanitizeFileName(string name)
         {
-            // 替换非法字符为下划线
             var invalid = Path.GetInvalidFileNameChars();
             var sb = new System.Text.StringBuilder(name.Length);
             foreach (var ch in name)
@@ -256,14 +314,12 @@ namespace EncryptTools
             }
 
             var cleaned = sb.ToString();
-            // 去除结尾的空格和点，这些在Windows文件系统中非法
             cleaned = cleaned.TrimEnd(' ', '.');
             if (string.IsNullOrWhiteSpace(cleaned))
             {
                 cleaned = $"file_{Guid.NewGuid().ToString("N").Substring(0, 8)}";
             }
 
-            // 处理Windows保留文件名（不区分大小写）
             var reserved = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "CON","PRN","AUX","NUL",
@@ -277,8 +333,7 @@ namespace EncryptTools
                 baseName = baseName + "_";
             }
 
-            // 限制文件名长度，避免路径过长（保留扩展名）
-            const int maxBaseLen = 150; // 适度保守
+            const int maxBaseLen = 150;
             if (baseName.Length > maxBaseLen)
             {
                 baseName = baseName.Substring(0, maxBaseLen);
