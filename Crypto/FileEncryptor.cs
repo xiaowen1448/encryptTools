@@ -14,18 +14,19 @@ namespace EncryptTools
         public bool InPlace { get; set; }
         public bool Recursive { get; set; }
         public bool RandomizeFileName { get; set; }
-        public int RandomFileNameLength { get; set; } = 32;  // ← 新增：可配置长度
+        public int RandomFileNameLength { get; set; } = 36;  // ← 新增：可配置长度
 
         // 说明：随机文件名长度
         // 默认值：16
         // 类型：int
         // 有效范围：1-255 (Windows 文件名限制)
         // 推荐值：
-
         // 8 - 短名，低安全性
         // 16 - 中等，推荐默认
         // 24 - 较长，高安全性
-        // 32 - 完整GUID十六进制      
+        // 32 - 完整GUID十六进制  
+        //36-完整GUID格式（含连字符）✅ 可以用
+        //64- 超长名气，最高安全性    
         public string RandomFileNameFormat { get; set; } = "hex";  // ← 新增：格式选择 (hex/alphanumeric/guid)
         public CryptoAlgorithm Algorithm { get; set; }
         public required string Password { get; set; }
@@ -107,6 +108,7 @@ namespace EncryptTools
                     progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
                 }), ct);
 
+                // 自动还原原始文件名
                 if (!string.IsNullOrWhiteSpace(result?.OriginalFileName))
                 {
                     try
@@ -118,20 +120,17 @@ namespace EncryptTools
                             _options.Log?.Invoke($"原始文件名包含空格或特殊字符，已更正为: {restoredName}");
                         }
                         var desired = Path.Combine(targetDir, restoredName);
-                        var finalPath = desired;
-                        if (File.Exists(desired))
+                        // 如果未勾选随机文件名，直接覆盖原文件（如有重名则覆盖）
+                        if (outFile != desired)
                         {
-                            var baseName = Path.GetFileNameWithoutExtension(desired);
-                            var ext = Path.GetExtension(desired);
-                            var stamp = DateTime.Now.ToString("yyyyMMddHHmmss");
-                            finalPath = Path.Combine(targetDir, $"{baseName}-restored-{stamp}{ext}");
-                        }
-                        if (outFile != finalPath)
-                        {
-                            File.Move(outFile, finalPath);
-                            _options.Log?.Invoke($"已恢复原始文件名: {Path.GetFileName(finalPath)}");
-                            outFile = finalPath;
-                            _options.Log?.Invoke($"最终输出文件: {finalPath}");
+                            if (File.Exists(desired))
+                            {
+                                File.Delete(desired);
+                            }
+                            File.Move(outFile, desired);
+                            _options.Log?.Invoke($"已恢复原始文件名: {Path.GetFileName(desired)}");
+                            outFile = desired;
+                            _options.Log?.Invoke($"最终输出文件: {desired}");
                         }
                     }
                     catch (Exception ex)
@@ -253,18 +252,35 @@ namespace EncryptTools
         private static string GenerateRandomName(int length, string format = "hex")
         {
             // 验证长度
-            if (length <= 0)
-            {
-                length = 16;  // 默认长度
-            }
+            if (length <= 0) length = 16; // 默认长度
 
-            return format.ToLower() switch
+            // 支持特殊长度
+            switch (length)
             {
-                "hex" => GenerateHexName(length),
-                "alphanumeric" => GenerateAlphanumericName(length),
-                "guid" => GenerateGuidName(length),
-                _ => GenerateHexName(length)
-            };
+                case 8:
+                    // 短名，低安全性
+                    return format.ToLower() == "alphanumeric" ? GenerateAlphanumericName(8) : GenerateHexName(8);
+                case 16:
+                    // 推荐默认
+                    return format.ToLower() == "alphanumeric" ? GenerateAlphanumericName(16) : GenerateHexName(16);
+                case 24:
+                    // 高安全性
+                    return format.ToLower() == "alphanumeric" ? GenerateAlphanumericName(24) : GenerateHexName(24);
+                case 32:
+                    // 完整GUID十六进制
+                    return GenerateHexName(32);
+                case 36:
+                    // 完整GUID格式（含连字符）
+                    return Guid.NewGuid().ToString();
+                case 64:
+                    // 超长名气，最高安全性
+                    return format.ToLower() == "alphanumeric" ? GenerateAlphanumericName(64) : GenerateHexName(64);
+                default:
+                    // 其它长度按格式生成
+                    if (format.ToLower() == "guid" && length >= 36)
+                        return Guid.NewGuid().ToString();
+                    return format.ToLower() == "alphanumeric" ? GenerateAlphanumericName(length) : GenerateHexName(length);
+            }
         }
 
         /// <summary>
@@ -273,8 +289,15 @@ namespace EncryptTools
         /// </summary>
         private static string GenerateHexName(int length)
         {
-            var guid = Guid.NewGuid().ToString("N");  // 32个十六进制字符，无连字符
-            return guid.Length > length ? guid.Substring(0, length) : guid;
+            // 生成任意长度的十六进制字符串
+            var bytesLen = (length + 1) / 2; // 每字节2位hex
+            var bytes = new byte[bytesLen];
+            using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(bytes);
+            }
+            var hex = BitConverter.ToString(bytes).Replace("-", string.Empty);
+            return hex.Length > length ? hex.Substring(0, length) : hex;
         }
 
         /// <summary>
