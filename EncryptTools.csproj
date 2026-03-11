@@ -3,7 +3,8 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
-    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <AssemblyName>encryptTools</AssemblyName>
     <RootNamespace>EncryptTools</RootNamespace>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
@@ -62,5 +63,9 @@
     <None Include="runtimeconfig.template.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="app.ico" />
   </ItemGroup>
 </Project>

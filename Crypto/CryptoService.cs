@@ -491,7 +491,37 @@ namespace EncryptTools
         {
             // 优化FileStream配置：使用顺序访问提示和更大的缓冲区
             var fileOptions = FileOptions.SequentialScan;
-            using var inFs = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, fileOptions);
+            FileStream? inFs = null;
+            string? tempCopy = null;
+            try
+            {
+                inFs = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, fileOptions);
+            }
+            catch (IOException)
+            {
+                // 可能被占用：尝试复制到临时文件再读取（如果复制也失败则继续抛出）
+                tempCopy = TryCreateTempCopy(inputPath);
+                if (tempCopy != null)
+                {
+                    inFs = new FileStream(tempCopy, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, fileOptions);
+                }
+                else
+                {
+                    throw;
+                }
+            }
+            catch (UnauthorizedAccessException)
+            {
+                tempCopy = TryCreateTempCopy(inputPath);
+                if (tempCopy != null)
+                {
+                    inFs = new FileStream(tempCopy, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, fileOptions);
+                }
+                else
+                {
+                    throw;
+                }
+            }
             
             // 使用ArrayPool减少内存分配
             var buffer = BufferPool.Rent(BufferSize);
@@ -507,6 +537,29 @@ namespace EncryptTools
             finally
             {
                 BufferPool.Return(buffer);
+                try { inFs?.Dispose(); } catch { }
+                if (!string.IsNullOrEmpty(tempCopy))
+                {
+                    try { File.Delete(tempCopy); } catch { }
+                }
+            }
+        }
+
+        private static string? TryCreateTempCopy(string inputPath)
+        {
+            try
+            {
+                var src = new FileInfo(inputPath);
+                if (!src.Exists) return null;
+                string tempDir = Path.Combine(Path.GetTempPath(), "encryptTools_temp");
+                Directory.CreateDirectory(tempDir);
+                string tempFile = Path.Combine(tempDir, "src_" + Guid.NewGuid().ToString("N") + src.Extension);
+                File.Copy(inputPath, tempFile, overwrite: true);
+                return tempFile;
+            }
+            catch
+            {
+                return null;
             }
         }
 

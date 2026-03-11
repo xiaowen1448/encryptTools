@@ -10,6 +10,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Reflection;
 
 namespace EncryptTools
 {
@@ -22,12 +23,30 @@ namespace EncryptTools
         public MainForm()
         {
             InitializeComponent();
-            // 设置临时窗口图标（左上角logo）
+            // 设置窗口图标（任务栏图标/左上角logo）为 app.ico
             try
             {
-                this.Icon = GenerateTemporaryIcon();
+                this.Icon = LoadEmbeddedAppIcon() ?? this.Icon;
             }
             catch { /* 忽略图标生成失败 */ }
+        }
+
+        private static Icon? LoadEmbeddedAppIcon()
+        {
+            try
+            {
+                var asm = Assembly.GetExecutingAssembly();
+                var res = asm.GetManifestResourceNames()
+                    .FirstOrDefault(n => n.EndsWith("app.ico", StringComparison.OrdinalIgnoreCase));
+                if (string.IsNullOrEmpty(res)) return null;
+                using var s = asm.GetManifestResourceStream(res);
+                if (s == null) return null;
+                return new Icon(s);
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private void BrowseSource()

@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="encryptTools">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/encryptTools精简版-依赖.net8.zip!/" />
+      <root url="jar://$PROJECT_DIR$/encryptTools集成.net版本.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

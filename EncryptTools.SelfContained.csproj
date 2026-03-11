@@ -4,7 +4,8 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
-    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <AssemblyName>encryptTools</AssemblyName>
     <RootNamespace>EncryptTools</RootNamespace>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
@@ -55,9 +56,9 @@
     <IlcOptimizationPreference>Size</IlcOptimizationPreference>
   </PropertyGroup>
 
-  <!-- 嵌入资源 -->
+  <!-- 资源（图标用于 exe 图标） -->
   <ItemGroup>
-    <EmbeddedResource Include="Assets\app.ico" />
+    <EmbeddedResource Include="app.ico" />
   </ItemGroup>
 
   <!-- 运行时配置模板 -->

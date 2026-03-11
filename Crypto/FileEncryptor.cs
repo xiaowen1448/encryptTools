@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -59,11 +60,41 @@ namespace EncryptTools
                 var outFile = GetOutputFilePath(file, encrypt: true);
                 Directory.CreateDirectory(Path.GetDirectoryName(outFile)!);
                 _options.Log?.Invoke($"加密: {file} -> {outFile}");
-                await _crypto.EncryptFileAsync(file, outFile, _options.Algorithm, _options.Password, _options.Iterations, _options.AesKeySizeBits, new Progress<long>(bytes =>
+                try
                 {
-                    processed += bytes;
-                    progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
-                }), ct);
+                    await _crypto.EncryptFileAsync(file, outFile, _options.Algorithm, _options.Password, _options.Iterations, _options.AesKeySizeBits, new Progress<long>(bytes =>
+                    {
+                        processed += bytes;
+                        progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
+                    }), ct);
+                }
+                catch (IOException ioEx) when (IsSharingViolation(ioEx))
+                {
+                    // 源文件被占用：强制结束占用进程后重试一次
+                    if (TryForceUnlockFile(file, ioEx))
+                    {
+                        await _crypto.EncryptFileAsync(file, outFile, _options.Algorithm, _options.Password, _options.Iterations, _options.AesKeySizeBits, new Progress<long>(bytes =>
+                        {
+                            processed += bytes;
+                            progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
+                        }), ct);
+                    }
+                    else
+                    {
+                        _options.Log?.Invoke($"仍被占用，跳过: {file}");
+                        continue;
+                    }
+                }
+                catch (UnauthorizedAccessException uaEx)
+                {
+                    _options.Log?.Invoke($"无权限访问，跳过: {file} - {uaEx.Message}");
+                    continue;
+                }
+                catch (Exception ex)
+                {
+                    _options.Log?.Invoke($"加密失败，跳过: {file} - {ex.Message}");
+                    continue;
+                }
 
                 if (_options.InPlace)
                 {
@@ -71,8 +102,7 @@ namespace EncryptTools
                     {
                         if (File.Exists(outFile) && new FileInfo(outFile).Length > 0)
                         {
-                            File.Delete(file);
-                            _options.Log?.Invoke($"已删除源文件: {file}");
+                            TryDeleteSourceFileWithForce(file);
                         }
                         else
                         {
@@ -102,11 +132,41 @@ namespace EncryptTools
                 var outFile = GetOutputFilePath(file, encrypt: false);
                 Directory.CreateDirectory(Path.GetDirectoryName(outFile)!);
                 _options.Log?.Invoke($"解密: {file} -> {outFile}");
-                var result = await _crypto.DecryptFileAsync(file, outFile, _options.Password, new Progress<long>(bytes =>
+                CryptoService.DecryptResult? result = null;
+                try
                 {
-                    processed += bytes;
-                    progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
-                }), ct);
+                    result = await _crypto.DecryptFileAsync(file, outFile, _options.Password, new Progress<long>(bytes =>
+                    {
+                        processed += bytes;
+                        progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
+                    }), ct);
+                }
+                catch (IOException ioEx) when (IsSharingViolation(ioEx))
+                {
+                    if (TryForceUnlockFile(file, ioEx))
+                    {
+                        result = await _crypto.DecryptFileAsync(file, outFile, _options.Password, new Progress<long>(bytes =>
+                        {
+                            processed += bytes;
+                            progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
+                        }), ct);
+                    }
+                    else
+                    {
+                        _options.Log?.Invoke($"仍被占用，跳过: {file}");
+                        continue;
+                    }
+                }
+                catch (UnauthorizedAccessException uaEx)
+                {
+                    _options.Log?.Invoke($"无权限访问，跳过: {file} - {uaEx.Message}");
+                    continue;
+                }
+                catch (Exception ex)
+                {
+                    _options.Log?.Invoke($"解密失败，跳过: {file} - {ex.Message}");
+                    continue;
+                }
 
                 // 自动还原原始文件名
                 if (!string.IsNullOrWhiteSpace(result?.OriginalFileName))
@@ -145,8 +205,7 @@ namespace EncryptTools
                     {
                         if (File.Exists(outFile) && new FileInfo(outFile).Length > 0)
                         {
-                            File.Delete(file);
-                            _options.Log?.Invoke($"已删除源加密文件: {file}");
+                            TryDeleteSourceFileWithForce(file, isEncryptedSource: true);
                         }
                         else
                         {
@@ -377,6 +436,104 @@ namespace EncryptTools
                 return magic[0] == (byte)'E' && magic[1] == (byte)'N' && magic[2] == (byte)'C' && (magic[3] == (byte)'1' || magic[3] == (byte)'2');
             }
             catch { return false; }
+        }
+
+        private static bool IsSharingViolation(Exception ex)
+        {
+            try
+            {
+                int hr = Marshal.GetHRForException(ex);
+                // 0x20: ERROR_SHARING_VIOLATION, 0x21: ERROR_LOCK_VIOLATION
+                const int ERROR_SHARING_VIOLATION = unchecked((int)0x80070020);
+                const int ERROR_LOCK_VIOLATION = unchecked((int)0x80070021);
+                return hr == ERROR_SHARING_VIOLATION || hr == ERROR_LOCK_VIOLATION;
+            }
+            catch { return false; }
+        }
+
+        private bool TryForceUnlockFile(string file, Exception ex)
+        {
+            _options.Log?.Invoke($"源文件被占用：{ex.Message}");
+            try
+            {
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    if (WindowsFileLockKiller.TryKillLockingProcesses(file, _options.Log, out var killed))
+                    {
+                        _options.Log?.Invoke($"已结束占用进程数量: {killed.Count}，重试处理中…");
+                        return true;
+                    }
+                    _options.Log?.Invoke("未找到占用进程或无权限结束，占用仍存在。");
+                    return false;
+                }
+            }
+            catch (Exception e)
+            {
+                _options.Log?.Invoke("强制解锁失败: " + e.Message);
+            }
+            return false;
+        }
+
+        private void TryDeleteSourceFileWithForce(string file, bool isEncryptedSource = false)
+        {
+            string label = isEncryptedSource ? "源加密文件" : "源文件";
+            try
+            {
+                // 先去只读属性（常见导致 Access denied）
+                try
+                {
+                    var attr = File.GetAttributes(file);
+                    if ((attr & FileAttributes.ReadOnly) != 0)
+                    {
+                        File.SetAttributes(file, attr & ~FileAttributes.ReadOnly);
+                    }
+                }
+                catch { }
+
+                File.Delete(file);
+                _options.Log?.Invoke($"已删除{label}: {file}");
+                return;
+            }
+            catch (IOException ioEx) when (IsSharingViolation(ioEx))
+            {
+                // 被占用：尝试强制结束占用进程后再删
+                if (TryForceUnlockFile(file, ioEx))
+                {
+                    try
+                    {
+                        File.Delete(file);
+                        _options.Log?.Invoke($"已删除{label}: {file}");
+                        return;
+                    }
+                    catch (Exception ex2)
+                    {
+                        _options.Log?.Invoke($"结束占用进程后仍无法删除{label}: {file} - {ex2.Message}");
+                    }
+                }
+                _options.Log?.Invoke($"无法删除{label}（被占用），已保留: {file}");
+            }
+            catch (UnauthorizedAccessException uaEx)
+            {
+                // 权限不足/系统保护：也尝试结束占用进程再删一次
+                _options.Log?.Invoke($"删除{label}被拒绝访问: {file} - {uaEx.Message}");
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    try { WindowsFileLockKiller.TryKillLockingProcesses(file, _options.Log, out _); } catch { }
+                }
+                try
+                {
+                    File.Delete(file);
+                    _options.Log?.Invoke($"已删除{label}: {file}");
+                }
+                catch (Exception ex2)
+                {
+                    _options.Log?.Invoke($"仍无法删除{label}，已保留: {file} - {ex2.Message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _options.Log?.Invoke($"删除{label}失败，已保留: {file} - {ex.Message}");
+            }
         }
     }
 }

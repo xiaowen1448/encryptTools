@@ -4,7 +4,8 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
-    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <AssemblyName>encryptTools</AssemblyName>
     <RootNamespace>EncryptTools</RootNamespace>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
@@ -26,7 +27,10 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <!-- 不使用自包含发布 -->
     <SelfContained>false</SelfContained>
-    <PublishSingleFile>false</PublishSingleFile>
+    <!-- 产出单个 exe（仍需 .NET Runtime） -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <!-- 框架依赖发布不支持单文件压缩（NETSDK1176） -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     
     <!-- 基本优化，不影响兼容性 -->
     <Optimize>true</Optimize>
@@ -48,6 +52,11 @@
   <!-- 将 Assets 文件夹复制到输出目录（用于运行时加载）-->
   <ItemGroup>
     <Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- 运行时加载窗体图标 -->
+  <ItemGroup>
+    <EmbeddedResource Include="app.ico" />
   </ItemGroup>
 
 </Project>
