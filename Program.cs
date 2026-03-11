@@ -12,7 +12,8 @@ namespace EncryptTools
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainForm());
+            // 主入口：工作区式主窗口（菜单 + 左侧工作区列表 + 右侧欢迎面板）。
+            Application.Run(new WorkspaceForm());
         }
     }
 }

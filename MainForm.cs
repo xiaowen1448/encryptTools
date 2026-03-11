@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -11,6 +12,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Reflection;
+using EncryptTools.Ui;
 
 namespace EncryptTools
 {
@@ -18,7 +20,7 @@ namespace EncryptTools
     public partial class MainForm : Form
     {
         private CancellationTokenSource? _cts;
-        private string? _importedPassword; // 存储从密码文件导入的实际密码
+        private EncryptToolsConfig _cfg = new EncryptToolsConfig();
 
         public MainForm()
         {
@@ -29,6 +31,104 @@ namespace EncryptTools
                 this.Icon = LoadEmbeddedAppIcon() ?? this.Icon;
             }
             catch { /* 忽略图标生成失败 */ }
+
+            try { _cfg = ConfigHelper.Load(); } catch { _cfg = new EncryptToolsConfig(); }
+
+            // Apply theme/backdrop and wire card actions
+            ApplyThemeAndBackdrop();
+            WireCardActions();
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            ApplyThemeAndBackdrop();
+        }
+
+        private void ApplyThemeAndBackdrop()
+        {
+            bool dark = WindowsTheme.IsDarkMode();
+            try { Backdrop.TryApplyMicaOrAcrylic(Handle, dark); } catch { }
+
+            try
+            {
+                BackColor = dark ? Color.FromArgb(20, 20, 20) : Color.White;
+                ForeColor = dark ? Color.Gainsboro : Color.Black;
+                _lblSubTitle.ForeColor = dark ? Color.FromArgb(170, 170, 170) : Color.DimGray;
+                _cardString.ApplyTheme(dark);
+                _cardFile.ApplyTheme(dark);
+                _cardImage.ApplyTheme(dark);
+                _cardSmart.ApplyTheme(dark);
+            }
+            catch { }
+
+            try
+            {
+                _statusLeft.Text = "就绪";
+                _statusRight.Text = "v0.1";
+            }
+            catch { }
+        }
+
+        private void WireCardActions()
+        {
+            try
+            {
+                _cardString.PrimaryClick += (_, __) =>
+                {
+                    _statusLeft.Text = "字符串功能开发中";
+                    MessageBox.Show(this, "字符串/剪贴板加密解密功能开发中。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    _statusLeft.Text = "就绪";
+                };
+
+                _cardFile.PrimaryClick += async (_, __) =>
+                {
+                    using var dlg = new OpenFileDialog { Title = "选择要加密/解密的文件", CheckFileExists = true };
+                    if (dlg.ShowDialog(this) != DialogResult.OK) return;
+
+                    _cfg.SourcePath = dlg.FileName;
+                    try { ConfigHelper.Save(_cfg); } catch { }
+                    _statusLeft.Text = "开始处理文件…";
+
+                    // 默认做“加密”，解密可以后续在卡片内做二级按钮
+                    await StartProcessAsync(true);
+                    _statusLeft.Text = "就绪";
+                };
+
+                _cardFile.FileDropped += async (_, e) =>
+                {
+                    try
+                    {
+                        if (e.Data?.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0)
+                        {
+                            _cfg.SourcePath = files[0];
+                            try { ConfigHelper.Save(_cfg); } catch { }
+                            _statusLeft.Text = "开始处理文件…";
+                            await StartProcessAsync(true);
+                            _statusLeft.Text = "就绪";
+                        }
+                    }
+                    catch
+                    {
+                        _statusLeft.Text = "就绪";
+                    }
+                };
+
+                _cardImage.PrimaryClick += (_, __) =>
+                {
+                    _statusLeft.Text = "图片像素化开发中";
+                    MessageBox.Show(this, "图片像素化加密功能开发中。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    _statusLeft.Text = "就绪";
+                };
+
+                _cardSmart.PrimaryClick += (_, __) =>
+                {
+                    _statusLeft.Text = "智能解密开发中";
+                    MessageBox.Show(this, "常见规则智能解密功能开发中。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    _statusLeft.Text = "就绪";
+                };
+            }
+            catch { }
         }
 
         private static Icon? LoadEmbeddedAppIcon()
@@ -49,36 +149,50 @@ namespace EncryptTools
             }
         }
 
-        private void BrowseSource()
+        private void OpenSettings()
         {
-            if (chkSelectFile.Checked)
+            using var dlg = new SettingsForm(_cfg);
+            if (dlg.ShowDialog(this) == DialogResult.OK)
             {
-                using var fileDlg = new OpenFileDialog
-                {
-                    Title = "选择源文件",
-                    CheckFileExists = true
-                };
-                if (fileDlg.ShowDialog(this) == DialogResult.OK)
-                {
-                    txtSourcePath.Text = fileDlg.FileName;
-                }
-            }
-            else
-            {
-                using var folderDlg = new FolderBrowserDialog { Description = "选择源文件夹" };
-                if (folderDlg.ShowDialog(this) == DialogResult.OK)
-                {
-                    txtSourcePath.Text = folderDlg.SelectedPath;
-                }
+                _cfg = dlg.ResultConfig ?? ConfigHelper.Load();
+                Log("设置已保存");
             }
         }
 
-        private void BrowseOutput()
+        private void OpenAbout()
         {
-            using var fbd = new FolderBrowserDialog { Description = "选择输出文件夹" };
-            if (fbd.ShowDialog(this) == DialogResult.OK)
+            try
             {
-                txtOutputPath.Text = fbd.SelectedPath;
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "https://github.com/xiaowen1448/",
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                Log("打开链接失败: " + ex.Message);
+            }
+        }
+
+        private string LoadPasswordFromExeDir()
+        {
+            try
+            {
+                var exeDir = ConfigHelper.GetExeDir();
+                var fileName = string.IsNullOrWhiteSpace(_cfg?.PasswordFileName) ? "password.pwd" : _cfg.PasswordFileName;
+                var pwdPath = Path.Combine(exeDir, fileName);
+                if (!File.Exists(pwdPath))
+                {
+                    Log("未找到密码文件，请先在「设置」中保存密码: " + pwdPath);
+                    return "";
+                }
+                return PasswordFileHelper.LoadPasswordFromFile(pwdPath);
+            }
+            catch (Exception ex)
+            {
+                Log("读取密码文件失败: " + ex.Message);
+                return "";
             }
         }
 
@@ -86,37 +200,31 @@ namespace EncryptTools
         {
             try
             {
-                ClearLog();
-                var sourcePath = txtSourcePath.Text.Trim();
-                var outputPath = txtOutputPath.Text.Trim();
-                var inPlace = chkInPlace.Checked;
-                var recursive = chkRecursive.Checked;
-                var randomName = chkRandomName.Checked;
-                var algorithmText = cmbAlgorithm.SelectedItem?.ToString() ?? "AES-CBC";
-                // 优先使用导入的密码，如果没有则使用输入框中的密码
-                var password = _importedPassword ?? txtPassword.Text;
-                var iterations = (int)nudIterations.Value;
+                var sourcePath = (_cfg?.SourcePath ?? "").Trim();
+                var outputPath = (_cfg?.OutputPath ?? "").Trim();
+                var inPlace = true;
+                var recursive = true;
+                var randomName = false;
+                var algorithmText = "AES-CBC";
+                var password = LoadPasswordFromExeDir();
+                var iterations = 200_000;
                 var aesKeySizeBits = 256;
-                if (int.TryParse(cmbKeySize.SelectedItem?.ToString(), out var selBits))
-                {
-                    aesKeySizeBits = selBits;
-                }
 
                 if (string.IsNullOrWhiteSpace(sourcePath))
                 {
-                    AppendLog("请先选择源路径(文件或文件夹)");
+                    MessageBox.Show(this, "请先在“文件加密/解密”卡片选择文件或拖拽文件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
                 if (!File.Exists(sourcePath) && !Directory.Exists(sourcePath))
                 {
-                    AppendLog("源路径不存在");
+                    MessageBox.Show(this, "源路径不存在。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
                 // 检查密码是否为空
                 if (string.IsNullOrWhiteSpace(password))
                 {
-                    AppendLog("密码不能为空，请输入密码后再进行加密或解密操作");
+                    MessageBox.Show(this, "密码未配置。请先在“设置”里保存密码文件（password.pwd）。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
@@ -124,10 +232,9 @@ namespace EncryptTools
                 {
                     if (string.IsNullOrWhiteSpace(outputPath))
                     {
-                        AppendLog("未选择输出路径，已自动使用源路径同级的 output 目录");
+                        Log("未选择输出路径，已自动使用源路径同级的 output 目录");
                         var autoOut = Path.Combine(Path.GetDirectoryName(sourcePath) ?? sourcePath, "output");
                         Directory.CreateDirectory(autoOut);
-                        txtOutputPath.Text = autoOut;
                         outputPath = autoOut;
                     }
                     else if (!Directory.Exists(outputPath))
@@ -140,11 +247,12 @@ namespace EncryptTools
                 {
                     "AES-CBC" => CryptoAlgorithm.AesCbc,
                     "AES-GCM(小文件)" => CryptoAlgorithm.AesGcm,
+                    "AES-GCM" => CryptoAlgorithm.AesGcm,
                     "TripleDES" => CryptoAlgorithm.TripleDes,
                     _ => CryptoAlgorithm.Xor
                 };
 
-                ToggleUI(false);
+                SetBusy(true);
                 _cts = new CancellationTokenSource();
 
                 var progress = new Progress<double>(p =>
@@ -163,24 +271,24 @@ namespace EncryptTools
                     Password = password,
                     Iterations = iterations,
                     AesKeySizeBits = aesKeySizeBits,
-                    Log = AppendLog
+                    Log = _ => { } // UI v0.1: no log box in main page
                 };
 
                 var encryptor = new FileEncryptor(options);
                 if (encrypt)
                 {
                     await encryptor.EncryptAsync(progress, _cts?.Token ?? CancellationToken.None);
-                    AppendLog("加密完成");
+                    MessageBox.Show(this, "加密完成。", "完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 else
                 {
                     await encryptor.DecryptAsync(progress, _cts?.Token ?? CancellationToken.None);
-                    AppendLog("解密完成");
+                    MessageBox.Show(this, "解密完成。", "完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
             catch (OperationCanceledException)
             {
-                AppendLog("已取消");
+                _statusLeft.Text = "已取消";
             }
             catch (Exception ex)
             {
@@ -193,250 +301,45 @@ namespace EncryptTools
                     ex.Message.Contains("密码") ||
                     ex.Message.Contains("password"))
                 {
-                    // 根据当前模式显示不同的错误信息
-                    if (cmbPasswordType.SelectedIndex == 0) // 输入密码模式
-                    {
-                        AppendLog("密码不正确，请检查密码是否正确或文件是否损坏");
-                    }
-                    else // 密码文件模式
-                    {
-                        AppendLog("密码文件不可用，请检查密码文件是否完整或文件是否损坏");
-                    }
+                    MessageBox.Show(this, "密码不正确或密码文件不可用，请在“设置”中重新保存密码。", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
                 else
                 {
-                    AppendLog("发生错误: " + ex.Message);
+                    MessageBox.Show(this, "发生错误: " + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
             finally
             {
                 _cts?.Dispose();
                 _cts = null;
-                ToggleUI(true);
+                SetBusy(false);
             }
         }
 
-        private void CancelProcessing()
+        // v0.1 新版首页不展示日志/高级参数控件；保留设置与文件处理入口
+        private void Log(string text)
         {
-            _cts?.Cancel();
-        }
-
-        private void ToggleUI(bool enable)
-        {
-            txtSourcePath.Enabled = enable;
-            btnBrowseSource.Enabled = enable;
-            txtOutputPath.Enabled = enable;
-            btnBrowseOutput.Enabled = enable;
-            chkInPlace.Enabled = enable;
-            chkRecursive.Enabled = enable;
-            chkSelectFile.Enabled = enable;
-            chkRandomName.Enabled = enable;
-            cmbAlgorithm.Enabled = enable;
-            txtPassword.Enabled = enable;
-            cmbPasswordType.Enabled = enable;
-            btnSavePassword.Enabled = enable && btnSavePassword.Text != "已保存";
-            btnImportPassword.Enabled = enable;
-            nudIterations.Enabled = enable;
-            btnEncrypt.Enabled = enable;
-            btnDecrypt.Enabled = enable;
-        }
-
-        private void AppendLog(string text)
-        {
-            if (txtLog.InvokeRequired)
-            {
-                txtLog.Invoke(new Action<string>(AppendLog), text);
-                return;
-            }
-            txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] {text}{Environment.NewLine}");
-        }
-
-        private void ClearLog()
-        {
-            txtLog.Clear();
-        }
-
-        private void UpdateKeySizeAvailability()
-        {
-            var algo = cmbAlgorithm.SelectedItem?.ToString() ?? string.Empty;
-            var isAes = algo.StartsWith("AES", StringComparison.OrdinalIgnoreCase);
-            cmbKeySize.Enabled = isAes;
-        }
-
-        private void UpdatePasswordTypeUI()
-        {
-            var isInputPassword = cmbPasswordType.SelectedIndex == 0; // "输入密码"
-            btnSavePassword.Visible = isInputPassword;
-            btnImportPassword.Visible = !isInputPassword;
-            
-            // 控制密码输入框的可编辑状态和显示模式
-            txtPassword.ReadOnly = !isInputPassword;
-            txtPassword.UseSystemPasswordChar = isInputPassword; // 输入密码模式时隐藏，文件模式时显示明文
-            
-            // 设置输入框背景颜色
-            if (!isInputPassword)
-            {
-                // 密码文件模式：设置为灰色背景
-                txtPassword.BackColor = System.Drawing.SystemColors.Control;
-            }
-            else
-            {
-                // 输入密码模式：恢复默认白色背景
-                txtPassword.BackColor = System.Drawing.SystemColors.Window;
-            }
-            
-            if (!isInputPassword)
-            {
-                // 重置保存按钮状态
-                btnSavePassword.Enabled = true;
-                btnSavePassword.Text = "保存密码";
-                // 清空密码输入框，准备显示文件名
-                txtPassword.Text = "";
-                // 清空导入的密码
-                _importedPassword = null;
-            }
-            else
-            {
-                // 切换回输入密码模式时，清空并启用输入
-                txtPassword.Text = "";
-                // 清空导入的密码
-                _importedPassword = null;
-            }
-        }
-
-        private void OnPasswordTextChanged()
-        {
-            // 只有在"输入密码"模式下才处理文本变化
-            if (cmbPasswordType.SelectedIndex == 0 && btnSavePassword.Text == "已保存")
-            {
-                // 密码内容发生变化，重置保存按钮状态
-                btnSavePassword.Enabled = true;
-                btnSavePassword.Text = "保存密码";
-            }
-        }
-
-        private void SavePassword()
-        {
-            var password = txtPassword.Text;
-            if (string.IsNullOrWhiteSpace(password))
-            {
-                AppendLog("请先输入密码");
-                return;
-            }
-
-            using var saveDialog = new SaveFileDialog
-            {
-                Title = "保存密码文件",
-                Filter = "密码文件 (*.pwd)|*.pwd",
-                DefaultExt = "pwd"
-            };
-
-            if (saveDialog.ShowDialog(this) == DialogResult.OK)
-            {
-                try
-                {
-                    SavePasswordToFile(password, saveDialog.FileName);
-                    AppendLog($"密码已保存到: {saveDialog.FileName}");
-                    btnSavePassword.Enabled = false;
-                    btnSavePassword.Text = "已保存";
-                }
-                catch (Exception ex)
-                {
-                    AppendLog($"保存密码失败: {ex.Message}");
-                }
-            }
-        }
-
-        private void ImportPasswordFile()
-        {
-            using var openDialog = new OpenFileDialog
-            {
-                Title = "选择密码文件",
-                Filter = "密码文件 (*.pwd)|*.pwd|所有文件 (*.*)|*.*",
-                CheckFileExists = true
-            };
-
-            if (openDialog.ShowDialog(this) == DialogResult.OK)
-            {
-                try
-                {
-                    var password = LoadPasswordFromFile(openDialog.FileName);
-                    // 存储实际密码到一个私有字段，但在输入框中显示文件名
-                    _importedPassword = password;
-                    txtPassword.Text = Path.GetFileName(openDialog.FileName);
-                    AppendLog($"密码文件已导入: {openDialog.FileName}");
-                }
-                catch (Exception ex)
-                {
-                    AppendLog($"导入密码文件失败: {ex.Message}");
-                }
-            }
-        }
-
-        private void SavePasswordToFile(string password, string filePath)
-        {
-            // 使用AES-GCM 256位加密密码
-            var key = new byte[32]; // 256位密钥
-            var nonce = new byte[12]; // AES-GCM标准nonce长度
-            
-            using var rng = RandomNumberGenerator.Create();
-            rng.GetBytes(key);
-            rng.GetBytes(nonce);
-
-            var passwordBytes = Encoding.UTF8.GetBytes(password);
-            var ciphertext = new byte[passwordBytes.Length];
-            var tag = new byte[16]; // 认证标签
-
-            using var aesGcm = new AesGcm(key, 16);
-            aesGcm.Encrypt(nonce, passwordBytes, ciphertext, tag);
-
-            // 保存格式: Key(32字节) + Nonce(12字节) + Tag(16字节) + 加密的密码
-            using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write);
-            fs.Write(key, 0, key.Length);
-            fs.Write(nonce, 0, nonce.Length);
-            fs.Write(tag, 0, tag.Length);
-            fs.Write(ciphertext, 0, ciphertext.Length);
-        }
-
-        private string LoadPasswordFromFile(string filePath)
-        {
-            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-            
-            if (fs.Length < 60) // 至少需要32+12+16=60字节
-            {
-                throw new InvalidDataException("密码文件格式不正确");
-            }
-            
-            // 读取Key(32字节)
-            var key = new byte[32];
-            fs.Read(key, 0, 32);
-            
-            // 读取Nonce(12字节)
-            var nonce = new byte[12];
-            fs.Read(nonce, 0, 12);
-            
-            // 读取Tag(16字节)
-            var tag = new byte[16];
-            fs.Read(tag, 0, 16);
-            
-            // 读取加密的密码
-            var ciphertext = new byte[fs.Length - 60];
-            fs.Read(ciphertext, 0, ciphertext.Length);
-
-            // 解密密码
-            var plaintext = new byte[ciphertext.Length];
-            using var aesGcm = new AesGcm(key, 16);
-            
             try
             {
-                aesGcm.Decrypt(nonce, ciphertext, tag, plaintext);
-                return Encoding.UTF8.GetString(plaintext);
+                if (string.IsNullOrWhiteSpace(text)) return;
+                _statusLeft.Text = text;
             }
-            catch (CryptographicException)
-            {
-                throw new InvalidDataException("密码文件已损坏或格式不正确");
-            }
+            catch { }
         }
+
+        private void SetBusy(bool busy)
+        {
+            try
+            {
+                _statusLeft.Text = busy ? "处理中…" : "就绪";
+                _cardString.PrimaryEnabled = !busy;
+                _cardFile.PrimaryEnabled = !busy;
+                _cardImage.PrimaryEnabled = !busy;
+                _cardSmart.PrimaryEnabled = !busy;
+            }
+            catch { }
+        }
+
         // 临时生成一个窗口图标（不影响 exe 的打包图标设置）
         private Icon GenerateTemporaryIcon()
         {

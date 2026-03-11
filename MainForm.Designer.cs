@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Drawing;
 using System.Windows.Forms;
+using EncryptTools.Ui;
 
 namespace EncryptTools
 {
@@ -21,170 +22,120 @@ namespace EncryptTools
         private void InitializeComponent()
         {
             components = new Container();
-            this.Text = "加密工具 (EncryptTools)";
+            this.Text = "encryptTools";
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.Size = new System.Drawing.Size(660, 350);
-            this.MinimumSize = new System.Drawing.Size(560, 250);
+            this.Size = new System.Drawing.Size(950, 680);
+            this.MinimumSize = new System.Drawing.Size(820, 560);
             this.AutoScaleMode = AutoScaleMode.Font;
             this.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F);
-            
-            // 设置窗口图标（标题栏和缩略图）
-            try
-            {
-                string exePath = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
-                string iconPath = System.IO.Path.Combine(exePath, "Assets", "app-mini16.ico");
-                
-                if (System.IO.File.Exists(iconPath))
-                {
-                    this.Icon = new Icon(iconPath);
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine("加载窗口图标失败: " + ex.Message);
-            }
+            this.FormBorderStyle = FormBorderStyle.Sizable;
+            this.MaximizeBox = true;
+            this.MinimizeBox = true;
 
-            var layout = new TableLayoutPanel
+            var root = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 3,
-                RowCount = 7,
-                Padding = new System.Windows.Forms.Padding(8),
-                AutoSize = true
+                ColumnCount = 1,
+                RowCount = 3,
+                Padding = new Padding(24, 20, 24, 20)
             };
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100F));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            // Row 0: Source
-            var lblSource = new Label { Text = "源路径:", AutoSize = true, Anchor = AnchorStyles.Left, TextAlign = ContentAlignment.MiddleLeft };
-            txtSourcePath = new TextBox { Anchor = AnchorStyles.Left | AnchorStyles.Right };
-            btnBrowseSource = new Button { Text = "浏览...", AutoSize = true };
-            layout.Controls.Add(lblSource, 0, 0);
-            layout.Controls.Add(txtSourcePath, 1, 0);
-            layout.Controls.Add(btnBrowseSource, 2, 0);
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // header
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F)); // cards
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // status
 
-            // Row 1: Output
-            var lblOutput = new Label { Text = "输出路径(可选):", AutoSize = true, Anchor = AnchorStyles.Left, TextAlign = ContentAlignment.MiddleLeft };
-            txtOutputPath = new TextBox { Anchor = AnchorStyles.Left | AnchorStyles.Right };
-            btnBrowseOutput = new Button { Text = "选择...", AutoSize = true };
-            layout.Controls.Add(lblOutput, 0, 1);
-            layout.Controls.Add(txtOutputPath, 1, 1);
-            layout.Controls.Add(btnBrowseOutput, 2, 1);
-
-            // Row 2: Options
-            var optionsPanel = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
-            chkInPlace = new CheckBox { Text = "源加密", AutoSize = true,Checked = true};
-            chkRecursive = new CheckBox { Text = "递归处理", AutoSize = true,Checked = true };
-            chkSelectFile = new CheckBox { Text = "处理单文件", AutoSize = true, Checked = false, Margin = new Padding(20, 3, 3, 3) };
-            chkRandomName = new CheckBox { Text = "随机文件名", AutoSize = true, Checked = false, Margin = new Padding(20, 3, 3, 3) };
-            optionsPanel.Controls.Add(chkInPlace);
-            optionsPanel.Controls.Add(chkRecursive);
-            optionsPanel.Controls.Add(chkSelectFile);
-            optionsPanel.Controls.Add(chkRandomName);
-            layout.Controls.Add(new Label { Text = "选项:", AutoSize = true, Anchor = AnchorStyles.Left, TextAlign = ContentAlignment.MiddleLeft }, 0, 2);
-            layout.Controls.Add(optionsPanel, 1, 2);
-
-            // Row 3: Algorithm + AES key size + iterations
-            var lblAlgorithm = new Label { Text = "算法:", AutoSize = true, Anchor = AnchorStyles.Left, TextAlign = ContentAlignment.MiddleLeft };
-            cmbAlgorithm = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110 };
-            cmbAlgorithm.Items.AddRange(new object[] { "AES-CBC", "AES-GCM", "TripleDES", "XOR(演示)" });
-            cmbAlgorithm.SelectedIndex = 0;
-            var algoPanel = new FlowLayoutPanel { AutoSize = true, Width = 500, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
-            var lblKeySize = new Label { Text = "AES密钥长度:", AutoSize = true, Margin = new Padding(10, 3, 3, 3), TextAlign = ContentAlignment.MiddleLeft };
-            cmbKeySize = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 60 };
-            cmbKeySize.Items.AddRange(new object[] { "128", "192", "256" });
-            cmbKeySize.SelectedIndex = 2;
-            var lblIterations = new Label { Text = "迭代次数:", AutoSize = true, Margin = new Padding(10, 3, 3, 3), TextAlign = ContentAlignment.MiddleLeft };
-            nudIterations = new NumericUpDown { Minimum = 10000, Maximum = 1000000, Value = 200000, Increment = 10000, Width = 70 };
-            algoPanel.Controls.Add(cmbAlgorithm);
-            algoPanel.Controls.Add(lblKeySize);
-            algoPanel.Controls.Add(cmbKeySize);
-            algoPanel.Controls.Add(lblIterations);
-            algoPanel.Controls.Add(nudIterations);
-            layout.Controls.Add(lblAlgorithm, 0, 3);
-            layout.Controls.Add(algoPanel, 1, 3);
-
-            // Row 4: Password
-            var lblPassword = new Label { Text = "密码:", AutoSize = true, Anchor = AnchorStyles.Left, TextAlign = ContentAlignment.MiddleLeft };
-            var passwordPanel = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
-            txtPassword = new TextBox { UseSystemPasswordChar = true, Width = 200 };
-            cmbPasswordType = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 80, Margin = new Padding(10, 3, 3, 3) };
-            cmbPasswordType.Items.AddRange(new object[] { "输入密码", "密码文件" });
-            cmbPasswordType.SelectedIndex = 0;
-            btnSavePassword = new Button { Text = "保存密码", AutoSize = true, Margin = new Padding(10, 3, 3, 3) };
-            btnImportPassword = new Button { Text = "导入密码文件", AutoSize = true, Margin = new Padding(10, 3, 3, 3), Visible = false };
-            passwordPanel.Controls.Add(txtPassword);
-            passwordPanel.Controls.Add(cmbPasswordType);
-            passwordPanel.Controls.Add(btnSavePassword);
-            passwordPanel.Controls.Add(btnImportPassword);
-            layout.Controls.Add(lblPassword, 0, 4);
-            layout.Controls.Add(passwordPanel, 1, 4);
-
-            // Row 5: Buttons
-            var buttonsPanel = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
-            btnEncrypt = new Button { Text = "加密", AutoSize = true, Padding = new System.Windows.Forms.Padding(4, 1, 1, 1) };
-            btnDecrypt = new Button { Text = "解密", AutoSize = true, Padding = new System.Windows.Forms.Padding(4, 1, 1, 1) };
-            btnCancel = new Button { Text = "取消", AutoSize = true, Padding = new System.Windows.Forms.Padding(4, 1, 1, 1) };
-            buttonsPanel.Controls.Add(btnEncrypt);
-            buttonsPanel.Controls.Add(btnDecrypt);
-            buttonsPanel.Controls.Add(btnCancel);
-            layout.Controls.Add(new Label { Text = "操作:", AutoSize = true, Anchor = AnchorStyles.Left, TextAlign = ContentAlignment.MiddleLeft }, 0, 5);
-            layout.Controls.Add(buttonsPanel, 1, 5);
-
-            // Row 6: Log
-            var lblLog = new Label { Text = "日志:", AutoSize = true, Anchor = AnchorStyles.Left, TextAlign = ContentAlignment.TopLeft };
-            txtLog = new TextBox
+            // Header
+            var header = new Panel { Dock = DockStyle.Top, Height = 110 };
+            _lblTitle = new Label
             {
-                Multiline = true,
-                ReadOnly = true,
-                ScrollBars = ScrollBars.Vertical,
-                Dock = DockStyle.Fill
+                Text = "快速加密 / 解密",
+                AutoSize = true,
+                Font = new Font("Microsoft YaHei UI", 28f, FontStyle.Bold, GraphicsUnit.Point),
+                Location = new Point(0, 0)
             };
-            layout.Controls.Add(lblLog, 0, 6);
-            layout.Controls.Add(txtLog, 1, 6);
-            layout.SetColumnSpan(txtLog, 2);
+            _lblSubTitle = new Label
+            {
+                Text = "支持文件 · 字符串 · 图片像素化 · 常见规则智能解密",
+                AutoSize = true,
+                Font = new Font("Microsoft YaHei UI", 10.5f, FontStyle.Regular, GraphicsUnit.Point),
+                ForeColor = Color.DimGray,
+                Location = new Point(2, 60)
+            };
+            header.Controls.Add(_lblTitle);
+            header.Controls.Add(_lblSubTitle);
 
-            Controls.Add(layout);
+            // Cards grid (2 columns)
+            var grid = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 2,
+                Padding = new Padding(0, 10, 0, 10)
+            };
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
 
-            // Events
-            btnBrowseSource.Click += (_, __) => BrowseSource();
-            btnBrowseOutput.Click += (_, __) => BrowseOutput();
-            btnEncrypt.Click += async (_, __) => await StartProcessAsync(true);
-            btnDecrypt.Click += async (_, __) => await StartProcessAsync(false);
-            btnCancel.Click += (_, __) => CancelProcessing();
-            cmbAlgorithm.SelectedIndexChanged += (_, __) => UpdateKeySizeAvailability();
-            cmbPasswordType.SelectedIndexChanged += (_, __) => UpdatePasswordTypeUI();
-            txtPassword.TextChanged += (_, __) => OnPasswordTextChanged();
-            btnSavePassword.Click += (_, __) => SavePassword();
-            btnImportPassword.Click += (_, __) => ImportPasswordFile();
+            _cardString = new FluentCard
+            {
+                Dock = DockStyle.Fill,
+                IconText = "\uE8C8", // Document with text
+                TitleText = "字符串 / 明文加密解密",
+                PrimaryButtonText = "加密当前剪贴板",
+                HintText = "支持粘贴 · Base64 · AES · 自动检测"
+            };
+            _cardFile = new FluentCard
+            {
+                Dock = DockStyle.Fill,
+                IconText = "\uE8A5", // Document
+                TitleText = "文件加密 / 解密",
+                PrimaryButtonText = "选择文件或拖拽这里",
+                HintText = "支持批量文件 · 断点续传式处理 · 失败自动跳过"
+            };
+            _cardImage = new FluentCard
+            {
+                Dock = DockStyle.Fill,
+                IconText = "\uEB9F", // Image
+                TitleText = "图片像素化加密",
+                PrimaryButtonText = "选择图片开始像素化",
+                HintText = "适合分享预览 · 可恢复 · 适配常见格式"
+            };
+            _cardSmart = new FluentCard
+            {
+                Dock = DockStyle.Fill,
+                IconText = "\uE72E", // Key
+                TitleText = "常见规则智能解密",
+                PrimaryButtonText = "输入密文 → 智能尝试",
+                HintText = "自动尝试常见编码/规则 · 输出最可能结果"
+            };
+
+            grid.Controls.Add(_cardString, 0, 0);
+            grid.Controls.Add(_cardFile, 1, 0);
+            grid.Controls.Add(_cardImage, 0, 1);
+            grid.Controls.Add(_cardSmart, 1, 1);
+
+            // Status bar
+            var status = new StatusStrip { Dock = DockStyle.Bottom, SizingGrip = true };
+            _statusLeft = new ToolStripStatusLabel("就绪") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
+            _statusRight = new ToolStripStatusLabel("v0.1") { TextAlign = ContentAlignment.MiddleRight };
+            status.Items.Add(_statusLeft);
+            status.Items.Add(_statusRight);
+
+            root.Controls.Add(header, 0, 0);
+            root.Controls.Add(grid, 0, 1);
+            root.Controls.Add(status, 0, 2);
+
+            Controls.Add(root);
         }
 
-        private TextBox txtSourcePath = null!;
-        private Button btnBrowseSource = null!;
-        private TextBox txtOutputPath = null!;
-        private Button btnBrowseOutput = null!;
-        private CheckBox chkInPlace = null!;
-        private CheckBox chkRecursive = null!;
-        private ComboBox cmbAlgorithm = null!;
-        private TextBox txtPassword = null!;
-        private NumericUpDown nudIterations = null!;
-        private Button btnEncrypt = null!;
-        private Button btnDecrypt = null!;
-        private Button btnCancel = null!;
-        private TextBox txtLog = null!;
-        private ComboBox cmbKeySize = null!;
-        private CheckBox chkSelectFile = null!;
-        private ComboBox cmbPasswordType = null!;
-        private Button btnSavePassword = null!;
-        private Button btnImportPassword = null!;
-        private CheckBox chkRandomName = null!;
+        private Label _lblTitle = null!;
+        private Label _lblSubTitle = null!;
+        private FluentCard _cardString = null!;
+        private FluentCard _cardFile = null!;
+        private FluentCard _cardImage = null!;
+        private FluentCard _cardSmart = null!;
+        private ToolStripStatusLabel _statusLeft = null!;
+        private ToolStripStatusLabel _statusRight = null!;
     }
 }
