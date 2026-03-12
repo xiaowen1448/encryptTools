@@ -18,6 +18,12 @@
 <img width="1844" height="1080" alt="7a7b60a4e3a82ee48676415e07660418" src="https://github.com/user-attachments/assets/a6257883-d52e-4791-9588-cc300089d4e2" />
 
 
+加密为exe程序，输入密码错误，自毁exe文件
+
+<img width="1844" height="1080" alt="image" src="https://github.com/user-attachments/assets/75a77123-e293-4689-b72a-146733e93519" />
+
+
+<img width="1594" height="790" alt="image" src="https://github.com/user-attachments/assets/23701dc6-26b8-4e16-808b-93e448902360" />
 
 
 
