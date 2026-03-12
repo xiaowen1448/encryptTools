@@ -2,9 +2,9 @@
 setlocal enabledelayedexpansion
 
 rem ============================================================
-rem encryptTools build script
+rem encryptTools build script ( .NET 8 )
 rem - Outputs: dist\encryptTools\encryptTools.exe
-rem - Type: framework-dependent single-file (requires .NET 8 runtime)
+rem - Target: net8.0-windows, framework-dependent single-file
 rem ============================================================
 
 cd /d "%~dp0"
@@ -12,6 +12,7 @@ cd /d "%~dp0"
 set CONFIG=Release
 set RID=win-x64
 set OUT_DIR=%CD%\dist\encryptTools
+set TARGET_FX=net8.0-windows
 
 for /f "tokens=1 delims=." %%a in ('dotnet --version 2^>nul') do set DOTNET_MAJOR=%%a
 if "%DOTNET_MAJOR%"=="" (
@@ -21,10 +22,10 @@ if "%DOTNET_MAJOR%"=="" (
 )
 if %DOTNET_MAJOR% LSS 8 (
   echo.
-  echo [encryptTools] ERROR: Current dotnet SDK version is too old: %DOTNET_MAJOR%.
-  echo [encryptTools] Please install .NET 8 SDK to build/publish net8.0-windows.
+  echo [encryptTools] ERROR: Need .NET 8 SDK. Current: %DOTNET_MAJOR%.
   exit /b 1
 )
+echo [encryptTools] Using .NET %DOTNET_MAJOR% SDK, target: %TARGET_FX%
 
 echo.
 echo [encryptTools] Cleaning output...
@@ -53,10 +54,11 @@ dotnet restore "%CD%\EncryptTools.FrameworkDependent.csproj"
 if errorlevel 1 goto :fail
 
 echo.
-echo [encryptTools] Publishing (framework-dependent single-file)...
+echo [encryptTools] Publishing with .NET 8 (framework-dependent single-file)...
 dotnet publish "%CD%\EncryptTools.FrameworkDependent.csproj" ^
   -c %CONFIG% ^
   -r %RID% ^
+  -f %TARGET_FX% ^
   --self-contained false ^
   -o "%OUT_DIR%" ^
   /p:PublishSingleFile=true ^

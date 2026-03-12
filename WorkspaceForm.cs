@@ -1,11 +1,15 @@
 
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using EncryptTools.Ui;
+using EncryptTools.PasswordFile;
 
 namespace EncryptTools
 {
@@ -32,6 +36,13 @@ namespace EncryptTools
             public string Kind = "文件加密";
             public string? SourcePath;
             public TextBox LogBox = null!;
+            // 文件工作区控件引用（Kind=="文件"时使用）
+            public ListView? FileListView;
+            public CheckBox? ChkPackExe;
+            public CheckBox? ChkOverwrite;
+            public TextBox? TxtPassword;
+            public ComboBox? CbPwdFile;
+            public ComboBox? CbAlgo;
         }
 
         public WorkspaceForm()
@@ -107,7 +118,9 @@ namespace EncryptTools
             fileMenu.DropDownItems.Add(new ToolStripMenuItem("退出(&X)", null, (_, __) => Close()));
 
             var editMenu = new ToolStripMenuItem("编辑(&E)");
-            editMenu.DropDownItems.Add(new ToolStripMenuItem("设置(&S)...", null, (_, __) => ShowSettings()));
+            editMenu.DropDownItems.Add(new ToolStripMenuItem("新建密码文件(&N)", null, (_, __) => ShowNewPasswordFile()));
+            editMenu.DropDownItems.Add(new ToolStripMenuItem("密码文件导入(&I)", null, (_, __) => ShowImportPasswordFile()));
+            editMenu.DropDownItems.Add(new ToolStripMenuItem("密码文件编辑(&E)", null, (_, __) => ShowEditPasswordFile()));
 
             var helpMenu = new ToolStripMenuItem("帮助(&H)");
             helpMenu.DropDownItems.Add(new ToolStripMenuItem("使用手册", null, (_, __) => OpenHelp()));
@@ -165,17 +178,35 @@ namespace EncryptTools
                 ForeColor = Color.DimGray,
                 Location = new Point(44, 90)
             };
-            var btnWelcomeNew = new Button
+            var btnFile = new Button
             {
-                Text = "创建新加密工作区",
+                Text = "创建文件加密解密工作区",
                 AutoSize = true,
                 Font = new Font("Microsoft YaHei UI", 10f, FontStyle.Regular),
                 Location = new Point(46, 140)
             };
-            btnWelcomeNew.Click += (_, __) => NewWorkspace("文件");
+            var btnString = new Button
+            {
+                Text = "创建字符串加密解密工作区",
+                AutoSize = true,
+                Font = new Font("Microsoft YaHei UI", 10f, FontStyle.Regular),
+                Location = new Point(46, 178)
+            };
+            var btnImage = new Button
+            {
+                Text = "创建图片加密解密工作区",
+                AutoSize = true,
+                Font = new Font("Microsoft YaHei UI", 10f, FontStyle.Regular),
+                Location = new Point(46, 216)
+            };
+            btnFile.Click += (_, __) => NewWorkspace("文件");
+            btnString.Click += (_, __) => NewWorkspace("字符串");
+            btnImage.Click += (_, __) => NewWorkspace("图片");
             welcomePanel.Controls.Add(title);
             welcomePanel.Controls.Add(subtitle);
-            welcomePanel.Controls.Add(btnWelcomeNew);
+            welcomePanel.Controls.Add(btnFile);
+            welcomePanel.Controls.Add(btnString);
+            welcomePanel.Controls.Add(btnImage);
             welcomeTab.Controls.Add(welcomePanel);
             _tabWorkspaces.TabPages.Add(welcomeTab);
 
@@ -267,64 +298,63 @@ namespace EncryptTools
                 RowCount = 3
 
             };
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));   // 工具栏，允许两行换行
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // 主区域
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));       // 工具栏，换行时增高，下方预览区自动缩小
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // 主区域（文件/文件夹预览）
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));   // 底部状态条
 
-            // 顶部工具栏：所有按钮、下拉横向排布，宽度不够自动换行
+            // 上方工具栏：取消滚动条，按钮与下拉框排不下时自动换行
             var toolbar = new FlowLayoutPanel
             {
-                Dock = DockStyle.Fill,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 BackColor = SystemColors.ControlLight,
                 FlowDirection = FlowDirection.LeftToRight,
                 WrapContents = true,
                 AutoScroll = false,
-                Padding = new Padding(8, 8, 8, 4)
+                Padding = new Padding(6, 4, 6, 4)
             };
 
-            var btnSelect = new Button { Text = "选择文件/文件夹", AutoSize = true, Margin = new Padding(0, 0, 6, 4) };
-            var lblDragHint = new Label { Text = "也可拖拽到列表中", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 6, 16, 0) };
+            var btnSelectFile = new Button { Text = "选择文件", AutoSize = true, Margin = new Padding(0, 0, 6, 2) };
+            var btnSelectFolder = new Button { Text = "选择文件夹", AutoSize = true, Margin = new Padding(0, 0, 6, 2) };
+            var lblDragHint = new Label { Text = "可拖拽", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 6, 12, 0) };
 
-            var cbAlgo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170, Margin = new Padding(4, 4, 8, 4) };
-            cbAlgo.Items.AddRange(new object[]
-            {
-                "AES-256-GCM",
-                "AES-128-CBC",
-                "ChaCha20-Poly1305",
-                "SM4"
-            });
+            var lblAlgo = new Label { Text = "算法:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
+            var cbAlgo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 2), MinimumSize = new Size(120, 0) };
+            cbAlgo.Items.AddRange(new object[] { "AES-256-GCM", "AES-128-CBC", "ChaCha20-Poly1305", "SM4" });
             cbAlgo.SelectedIndex = 0;
-            var cbKdf = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140, Margin = new Padding(4, 4, 8, 4) };
-            cbKdf.Items.AddRange(new object[] { "Argon2", "PBKDF2", "Scrypt" });
-            cbKdf.SelectedIndex = 0;
-            var lblAlgo = new Label { Text = "加密算法:", AutoSize = true, Margin = new Padding(8, 8, 4, 0) };
-            var lblKdf = new Label { Text = "密钥派生:", AutoSize = true, Margin = new Padding(8, 8, 4, 0) };
-
-            var btnEncrypt = new Button { Text = "执行加密", BackColor = Color.RoyalBlue, ForeColor = Color.White, AutoSize = true, Margin = new Padding(16, 0, 4, 4) };
+            SetComboDropDownWidth(cbAlgo);
+            var lblSuffix = new Label { Text = "后缀:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
+            var cbSuffix = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 2), MinimumSize = new Size(70, 0) };
+            cbSuffix.Items.AddRange(new object[] { ".enc", ".aes", ".aesgcm", ".secure" });
+            cbSuffix.SelectedIndex = 0;
+            SetComboDropDownWidth(cbSuffix);
+            var lblPwd = new Label { Text = "密码文件:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
+            var cbPwdFile = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 2), MinimumSize = new Size(140, 0) };
+            cbPwdFile.DropDown += (_, __) => SetComboDropDownWidth(cbPwdFile);
+            RefreshFileWorkspacePwdCombo(cbPwdFile);
+            var chkSelfExe = new CheckBox { Text = "加密为可运行的exe", AutoSize = true, Margin = new Padding(8, 4, 4, 2) };
+            var chkOverwrite = new CheckBox { Text = "覆盖原文件", AutoSize = true, Margin = new Padding(0, 4, 12, 2), Checked = true };
+            var btnEncrypt = new Button { Text = "执行加密", BackColor = Color.RoyalBlue, ForeColor = Color.White, AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
             var btnDecrypt = new Button { Text = "执行解密", BackColor = Color.SeaGreen, ForeColor = Color.White, AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
-            var btnSaveCfg = new Button { Text = "保存设置", AutoSize = true, Margin = new Padding(8, 0, 4, 4) };
-            var btnReset = new Button { Text = "重置", AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
+            var btnClear = new Button { Text = "清空", AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
 
-            // 按顺序加入，同一行空间不够时自动换到下一行
-            toolbar.Controls.Add(btnSelect);
+            toolbar.Controls.Add(btnSelectFile);
+            toolbar.Controls.Add(btnSelectFolder);
             toolbar.Controls.Add(lblDragHint);
             toolbar.Controls.Add(lblAlgo);
             toolbar.Controls.Add(cbAlgo);
-            toolbar.Controls.Add(lblKdf);
-            toolbar.Controls.Add(cbKdf);
+            toolbar.Controls.Add(lblSuffix);
+            toolbar.Controls.Add(cbSuffix);
+            toolbar.Controls.Add(lblPwd);
+            toolbar.Controls.Add(cbPwdFile);
+            toolbar.Controls.Add(chkSelfExe);
+            toolbar.Controls.Add(chkOverwrite);
             toolbar.Controls.Add(btnEncrypt);
             toolbar.Controls.Add(btnDecrypt);
-            toolbar.Controls.Add(btnSaveCfg);
-            toolbar.Controls.Add(btnReset);
+            toolbar.Controls.Add(btnClear);
 
-            // 中间主区域：左列表 + 右配置（右侧最小宽度保证选项完整显示）
-            var split = new SplitContainer
-            {
-                Dock = DockStyle.Fill,
-                Orientation = Orientation.Vertical,
-                SplitterWidth = 4
-            };
-
+            // 中部：仅文件/文件夹预览列表
             var lvFiles = new ListView
             {
                 Dock = DockStyle.Fill,
@@ -340,9 +370,7 @@ namespace EncryptTools
             lvFiles.DragEnter += (s, e) =>
             {
                 if (e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop))
-                {
                     e.Effect = DragDropEffects.Copy;
-                }
             };
             lvFiles.DragDrop += (s, e) =>
             {
@@ -354,91 +382,7 @@ namespace EncryptTools
                 }
             };
 
-            split.Panel1.Controls.Add(lvFiles);
-
-            // 右侧配置区：表格式布局，保证密钥/密码、输出路径+浏览、文件后缀等完整展示
-            var rightConfig = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), AutoScroll = true };
-            var tblConfig = new TableLayoutPanel
-            {
-                Dock = DockStyle.Top,
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                ColumnCount = 2,
-                Padding = Padding.Empty
-            };
-            tblConfig.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72));   // 标签列
-            tblConfig.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));  // 控件列宽度减半，避免输入框过长
-
-            var txtPassword = new TextBox
-            {
-                Width = 140,
-                Anchor = AnchorStyles.Left,
-                UseSystemPasswordChar = true,
-                Margin = new Padding(0, 2, 0, 6)
-            };
-            try { txtPassword.PlaceholderText = "输入密钥/密码"; } catch { }
-
-            var txtOutput = new TextBox
-            {
-                Width = 100,
-                Anchor = AnchorStyles.Left,
-                Margin = new Padding(0, 2, 4, 6)
-            };
-            try { txtOutput.PlaceholderText = "留空则使用 output"; } catch { }
-
-            var btnBrowseOut = new Button { Text = "浏览...", AutoSize = true, Anchor = AnchorStyles.Left };
-            btnBrowseOut.Click += (_, __) =>
-            {
-                using var dlg = new FolderBrowserDialog { Description = "选择输出目录" };
-                if (dlg.ShowDialog(this) == DialogResult.OK)
-                    txtOutput.Text = dlg.SelectedPath;
-            };
-
-            var rowOutput = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 0, 0, 6), AutoSize = true };
-            rowOutput.Controls.Add(txtOutput);
-            rowOutput.Controls.Add(btnBrowseOut);
-
-            var chkZip = new CheckBox { Text = "压缩输出（ZIP）", AutoSize = true, Margin = new Padding(0, 4, 0, 2) };
-            var chkSelfExe = new CheckBox { Text = "自解压（.exe）", AutoSize = true, Margin = new Padding(0, 2, 0, 2) };
-            var chkOverwrite = new CheckBox { Text = "覆盖原文件（谨慎）", AutoSize = true, Margin = new Padding(0, 2, 0, 2) };
-
-            var cbSuffix = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 120 };
-            cbSuffix.Items.AddRange(new object[] { ".enc", ".aes", ".secure", "自定义" });
-            cbSuffix.SelectedIndex = 0;
-
-            int r = 0;
-            tblConfig.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            tblConfig.Controls.Add(new Label { Text = "密钥/密码：", AutoSize = true }, 0, r);
-            tblConfig.Controls.Add(txtPassword, 1, r++);
-            tblConfig.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            tblConfig.Controls.Add(new Label { Text = "输出路径：", AutoSize = true }, 0, r);
-            tblConfig.Controls.Add(rowOutput, 1, r++);
-            tblConfig.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            tblConfig.Controls.Add(new Label { Text = "文件后缀：", AutoSize = true }, 0, r);
-            tblConfig.Controls.Add(cbSuffix, 1, r++);
-            tblConfig.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            tblConfig.Controls.Add(chkZip, 0, r);
-            tblConfig.SetColumnSpan(chkZip, 2);
-            r++;
-            tblConfig.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            tblConfig.Controls.Add(chkSelfExe, 0, r);
-            tblConfig.SetColumnSpan(chkSelfExe, 2);
-            r++;
-            tblConfig.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            tblConfig.Controls.Add(chkOverwrite, 0, r);
-            tblConfig.SetColumnSpan(chkOverwrite, 2);
-
-            rightConfig.Controls.Add(tblConfig);
-            split.Panel2.Controls.Add(rightConfig);
-
-            // 根据实际宽度延后配置 SplitterDistance / Panel2MinSize，避免运行时异常
-            ConfigureFileSplit(split);
-
-            // 底部状态条（仅此页面内部）
-            var bottomStatus = new Panel
-            {
-                Dock = DockStyle.Fill
-            };
+            var bottomStatus = new Panel { Dock = DockStyle.Fill };
             var lblStatus = new Label { Text = "就绪", Dock = DockStyle.Left, AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, Width = 300 };
             var linkHelp = new LinkLabel { Text = "查看算法细节", Dock = DockStyle.Right, AutoSize = true, TextAlign = ContentAlignment.MiddleRight };
             linkHelp.LinkClicked += (_, __) => OpenHelp();
@@ -446,7 +390,7 @@ namespace EncryptTools
             bottomStatus.Controls.Add(lblStatus);
 
             root.Controls.Add(toolbar, 0, 0);
-            root.Controls.Add(split, 0, 1);
+            root.Controls.Add(lvFiles, 0, 1);
             root.Controls.Add(bottomStatus, 0, 2);
 
             tab.Controls.Add(root);
@@ -462,13 +406,34 @@ namespace EncryptTools
             {
                 Kind = "文件",
                 SourcePath = null,
-                LogBox = logBox
+                LogBox = logBox,
+                FileListView = lvFiles,
+                ChkPackExe = chkSelfExe,
+                ChkOverwrite = chkOverwrite,
+                TxtPassword = null,
+                CbPwdFile = cbPwdFile,
+                CbAlgo = cbAlgo
             };
             tab.Tag = ctx;
 
-            // 事件绑定
-            btnSelect.Click += (_, __) => SelectSourceForWorkspace(ctx);
+            void UpdateEncryptDecryptEnabled()
+            {
+                bool hasPwd = cbPwdFile.SelectedIndex > 0 && cbPwdFile.SelectedItem is string s && s != "(未选择)";
+                btnEncrypt.Enabled = hasPwd;
+                btnDecrypt.Enabled = hasPwd;
+            }
+            cbPwdFile.SelectedIndexChanged += (_, __) => UpdateEncryptDecryptEnabled();
+            UpdateEncryptDecryptEnabled();
+
+            btnSelectFile.Click += (_, __) => SelectSourceFiles(ctx);
+            btnSelectFolder.Click += (_, __) => SelectSourceFolder(ctx);
             btnEncrypt.Click += async (_, __) => await ExecuteEncryptWorkspace(ctx);
+            btnDecrypt.Click += async (_, __) => await ExecuteDecryptWorkspace(ctx);
+            btnClear.Click += (_, __) =>
+            {
+                lvFiles.Items.Clear();
+                ctx.LogBox.Clear();
+            };
 
             _tabWorkspaces.TabPages.Add(tab);
             _tabWorkspaces.SelectedTab = tab;
@@ -493,40 +458,46 @@ namespace EncryptTools
                 ColumnCount = 1,
                 RowCount = 3
             };
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
 
-            var toolbar = new Panel { Dock = DockStyle.Fill, BackColor = SystemColors.ControlLight };
-            var leftButtons = new FlowLayoutPanel { Dock = DockStyle.Left, Width = 220, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
-            var btnPaste = new Button { Text = "从剪贴板粘贴", AutoSize = true };
-            var btnClear = new Button { Text = "清空", AutoSize = true };
-            leftButtons.Controls.Add(btnPaste);
-            leftButtons.Controls.Add(btnClear);
-
-            var middleOptions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
-            var cbMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140 };
+            var toolbar = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                BackColor = SystemColors.ControlLight,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true,
+                AutoScroll = false,
+                Padding = new Padding(6, 4, 6, 4)
+            };
+            var btnPaste = new Button { Text = "从剪贴板粘贴", AutoSize = true, Margin = new Padding(0, 0, 6, 4) };
+            var btnClear = new Button { Text = "清空", AutoSize = true, Margin = new Padding(0, 0, 6, 4) };
+            var lblMode = new Label { Text = "加密模式:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
+            var cbMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 4), MinimumSize = new Size(100, 0) };
             cbMode.Items.AddRange(new object[] { "对称（AES）", "非对称（RSA）", "混合（PGP）" });
             cbMode.SelectedIndex = 0;
-            var cbEncoding = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140 };
+            SetComboDropDownWidth(cbMode);
+            var lblEnc = new Label { Text = "编码输出:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
+            var cbEncoding = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 4), MinimumSize = new Size(80, 0) };
             cbEncoding.Items.AddRange(new object[] { "Base64", "Hex", "URL编码", "Binary" });
             cbEncoding.SelectedIndex = 0;
-            middleOptions.Controls.Add(new Label { Text = "加密模式:", AutoSize = true, Margin = new Padding(0, 10, 4, 0) });
-            middleOptions.Controls.Add(cbMode);
-            middleOptions.Controls.Add(new Label { Text = "编码输出:", AutoSize = true, Margin = new Padding(12, 10, 4, 0) });
-            middleOptions.Controls.Add(cbEncoding);
+            SetComboDropDownWidth(cbEncoding);
+            var btnEncrypt = new Button { Text = "加密", BackColor = Color.RoyalBlue, ForeColor = Color.White, AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
+            var btnDecrypt = new Button { Text = "解密", BackColor = Color.SeaGreen, ForeColor = Color.White, AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
+            var btnCopyOut = new Button { Text = "复制输出", AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
 
-            var rightButtons = new FlowLayoutPanel { Dock = DockStyle.Right, Width = 260, FlowDirection = FlowDirection.RightToLeft, WrapContents = false };
-            var btnEncrypt = new Button { Text = "加密", BackColor = Color.RoyalBlue, ForeColor = Color.White, AutoSize = true };
-            var btnDecrypt = new Button { Text = "解密", BackColor = Color.SeaGreen, ForeColor = Color.White, AutoSize = true };
-            var btnCopyOut = new Button { Text = "复制输出", AutoSize = true };
-            rightButtons.Controls.Add(btnCopyOut);
-            rightButtons.Controls.Add(btnDecrypt);
-            rightButtons.Controls.Add(btnEncrypt);
-
-            toolbar.Controls.Add(rightButtons);
-            toolbar.Controls.Add(middleOptions);
-            toolbar.Controls.Add(leftButtons);
+            toolbar.Controls.Add(btnPaste);
+            toolbar.Controls.Add(btnClear);
+            toolbar.Controls.Add(lblMode);
+            toolbar.Controls.Add(cbMode);
+            toolbar.Controls.Add(lblEnc);
+            toolbar.Controls.Add(cbEncoding);
+            toolbar.Controls.Add(btnEncrypt);
+            toolbar.Controls.Add(btnDecrypt);
+            toolbar.Controls.Add(btnCopyOut);
 
             var mainGrid = new TableLayoutPanel
             {
@@ -621,125 +592,18 @@ namespace EncryptTools
                 BackColor = SystemColors.Control
             };
 
-            var root = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 1,
-                RowCount = 3
-            };
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-
-            var toolbar = new Panel { Dock = DockStyle.Fill, BackColor = SystemColors.ControlLight };
-            var leftButtons = new FlowLayoutPanel { Dock = DockStyle.Left, Width = 260, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
-            var btnSelectImg = new Button { Text = "选择图片", AutoSize = true };
-            var lblHint = new Label { Text = "也可拖拽图片到预览区", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(8, 10, 0, 0) };
-            leftButtons.Controls.Add(btnSelectImg);
-            leftButtons.Controls.Add(lblHint);
-
-            var middleOptions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
-            var cbMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
-            cbMode.Items.AddRange(new object[] { "不可逆马赛克", "像素置乱", "像素XOR", "Arnold猫映射" });
-            cbMode.SelectedIndex = 1;
-            var cbBlock = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 120 };
-            cbBlock.Items.AddRange(new object[] { "4x4", "8x8", "16x16", "32x32", "自定义" });
-            cbBlock.SelectedIndex = 2;
-            middleOptions.Controls.Add(new Label { Text = "像素化模式:", AutoSize = true, Margin = new Padding(0, 10, 4, 0) });
-            middleOptions.Controls.Add(cbMode);
-            middleOptions.Controls.Add(new Label { Text = "块大小:", AutoSize = true, Margin = new Padding(12, 10, 4, 0) });
-            middleOptions.Controls.Add(cbBlock);
-
-            var rightButtons = new FlowLayoutPanel { Dock = DockStyle.Right, Width = 300, FlowDirection = FlowDirection.RightToLeft, WrapContents = false };
-            var btnEncrypt = new Button { Text = "加密", BackColor = Color.RoyalBlue, ForeColor = Color.White, AutoSize = true };
-            var btnDecrypt = new Button { Text = "解密", BackColor = Color.SeaGreen, ForeColor = Color.White, AutoSize = true };
-            var btnSaveOut = new Button { Text = "保存输出", AutoSize = true };
-            var btnCompare = new Button { Text = "预览对比", AutoSize = true };
-            rightButtons.Controls.Add(btnCompare);
-            rightButtons.Controls.Add(btnSaveOut);
-            rightButtons.Controls.Add(btnDecrypt);
-            rightButtons.Controls.Add(btnEncrypt);
-
-            toolbar.Controls.Add(rightButtons);
-            toolbar.Controls.Add(middleOptions);
-            toolbar.Controls.Add(leftButtons);
-
-            var mainGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
-            mainGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-            mainGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-
-            var leftPreview = new PictureBox
-            {
-                Dock = DockStyle.Fill,
-                SizeMode = PictureBoxSizeMode.Zoom,
-                BorderStyle = BorderStyle.FixedSingle,
-                AllowDrop = true
-            };
-            var lblLeft = new Label { Text = "原图预览：拖拽或选择图片加载", ForeColor = Color.DimGray, Dock = DockStyle.Top, Height = 20 };
-            var leftContainer = new Panel { Dock = DockStyle.Fill };
-            leftContainer.Controls.Add(leftPreview);
-            leftContainer.Controls.Add(lblLeft);
-
-            leftPreview.DragEnter += (s, e) =>
-            {
-                if (e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop))
-                {
-                    e.Effect = DragDropEffects.Copy;
-                }
-            };
-            leftPreview.DragDrop += (s, e) =>
-            {
-                if (e.Data == null || !e.Data.GetDataPresent(DataFormats.FileDrop)) return;
-                if (e.Data.GetData(DataFormats.FileDrop) is string[] paths && paths.Length > 0)
-                {
-                    TryLoadImage(leftPreview, paths[0]);
-                }
-            };
-
-            var rightPreview = new PictureBox
-            {
-                Dock = DockStyle.Fill,
-                SizeMode = PictureBoxSizeMode.Zoom,
-                BorderStyle = BorderStyle.FixedSingle
-            };
-            var lblRight = new Label { Text = "加密图预览", ForeColor = Color.DimGray, Dock = DockStyle.Top, Height = 20 };
-            var rightContainer = new Panel { Dock = DockStyle.Fill };
-            rightContainer.Controls.Add(rightPreview);
-            rightContainer.Controls.Add(lblRight);
-
-            mainGrid.Controls.Add(leftContainer, 0, 0);
-            mainGrid.Controls.Add(rightContainer, 1, 0);
-
-            var bottomStatus = new Panel { Dock = DockStyle.Fill };
-            var lblStatus = new Label { Text = "就绪", Dock = DockStyle.Left, AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, Width = 260 };
-            bottomStatus.Controls.Add(lblStatus);
-
-            root.Controls.Add(toolbar, 0, 0);
-            root.Controls.Add(mainGrid, 0, 1);
-            root.Controls.Add(bottomStatus, 0, 2);
-
-            tab.Controls.Add(root);
-
             var logBox = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill };
+            void Log(string msg)
+            {
+                if (string.IsNullOrWhiteSpace(msg)) return;
+                if (logBox.IsDisposed) return;
+                try { logBox.Invoke(() => logBox.AppendText(msg + Environment.NewLine)); } catch { }
+            }
+            var imagePanel = new ImageWorkspacePanel(Log, null);
+            tab.Controls.Add(imagePanel);
+
             var ctx = new WorkspaceContext { Kind = "图片", SourcePath = null, LogBox = logBox };
             tab.Tag = ctx;
-
-            btnSelectImg.Click += (_, __) =>
-            {
-                using var dlg = new OpenFileDialog { Filter = "图片文件|*.png;*.jpg;*.jpeg;*.bmp|所有文件|*.*" };
-                if (dlg.ShowDialog(this) == DialogResult.OK)
-                {
-                    TryLoadImage(leftPreview, dlg.FileName);
-                }
-            };
-            btnEncrypt.Click += (_, __) =>
-            {
-                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 图片加密占位执行。{Environment.NewLine}");
-            };
-            btnDecrypt.Click += (_, __) =>
-            {
-                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 图片解密占位执行。{Environment.NewLine}");
-            };
 
             _tabWorkspaces.TabPages.Add(tab);
             _tabWorkspaces.SelectedTab = tab;
@@ -759,12 +623,12 @@ namespace EncryptTools
                 // 只在首次获得有效宽度时配置一次
                 split.SizeChanged -= handler!;
 
-                // 右侧期望至少 260 像素，如果整体宽度太小则保持默认，避免异常
-                const int rightPreferredMin = 260;
+                // 右侧仅保留少量宽度，列表区域扩大
+                const int rightPreferredMin = 120;
                 if (split.Width <= rightPreferredMin + split.Panel1MinSize + split.SplitterWidth)
                     return;
 
-                int desiredLeft = (int)(split.Width * 0.55);
+                int desiredLeft = (int)(split.Width * 0.78);
                 int maxLeft = split.Width - rightPreferredMin;
                 if (maxLeft < split.Panel1MinSize)
                     maxLeft = split.Panel1MinSize;
@@ -870,7 +734,8 @@ namespace EncryptTools
 
         private void ExecuteDecrypt()
         {
-            _statusLeft.Text = "执行解密（占位，仅结构）";
+            if (_tabWorkspaces.SelectedTab?.Tag is WorkspaceContext ctx)
+                _ = ExecuteDecryptWorkspace(ctx);
         }
 
         private void CloseWorkspace(TabPage tab)
@@ -960,58 +825,289 @@ namespace EncryptTools
             }
         }
 
-        private async System.Threading.Tasks.Task ExecuteEncryptWorkspace(WorkspaceContext ctx)
+        private static CryptoAlgorithm MapAlgorithm(ComboBox? cb)
+        {
+            if (cb == null || cb.SelectedIndex < 0) return CryptoAlgorithm.AesCbc;
+            return cb.SelectedIndex == 0 ? CryptoAlgorithm.AesGcm : CryptoAlgorithm.AesCbc;
+        }
+
+        private static string GetEncryptedExtension(CryptoAlgorithm alg)
+        {
+            return alg switch
+            {
+                CryptoAlgorithm.AesCbc => ".aes",
+                CryptoAlgorithm.AesGcm => ".aesgcm",
+                CryptoAlgorithm.TripleDes => ".3des",
+                CryptoAlgorithm.Xor => ".xor",
+                _ => ".enc"
+            };
+        }
+
+        private string? GetPasswordFromFileWorkspace(WorkspaceContext ctx)
+        {
+            if (ctx.CbPwdFile == null || ctx.CbPwdFile.SelectedIndex <= 0) return null;
+            if (ctx.CbPwdFile.SelectedItem is string name && name.EndsWith(".pwd", StringComparison.OrdinalIgnoreCase))
+            {
+                var path = Path.Combine(PasswordFileService.GetPwdDirectory(), name);
+                if (File.Exists(path))
+                {
+                    try { return PasswordFileHelper.LoadPasswordFromFile(path); } catch { }
+                }
+            }
+            return null;
+        }
+
+        private static void SetComboDropDownWidth(ComboBox cb)
+        {
+            if (cb == null || cb.Items.Count == 0) return;
+            int maxW = cb.Width;
+            try
+            {
+                using (var g = cb.CreateGraphics())
+                {
+                    foreach (var item in cb.Items)
+                    {
+                        var s = item?.ToString() ?? "";
+                        var w = (int)Math.Ceiling(g.MeasureString(s, cb.Font).Width) + 24;
+                        if (w > maxW) maxW = w;
+                    }
+                }
+                cb.DropDownWidth = Math.Max(maxW, 80);
+                if (maxW > cb.Width)
+                    cb.Width = Math.Min(maxW, 400);
+            }
+            catch { }
+        }
+
+        private static void RefreshFileWorkspacePwdCombo(ComboBox cb, string? preserveSelectedFileName = null)
+        {
+            cb.Items.Clear();
+            cb.Items.Add("(未选择)");
+            try
+            {
+                PasswordFileService.EnsurePwdDirectory();
+                foreach (var f in PasswordFileService.ListPwdFiles())
+                    cb.Items.Add(Path.GetFileName(f));
+                if (!string.IsNullOrEmpty(preserveSelectedFileName))
+                {
+                    for (int i = 0; i < cb.Items.Count; i++)
+                    {
+                        if (string.Equals(cb.Items[i]?.ToString(), preserveSelectedFileName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            cb.SelectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+                if (cb.SelectedIndex < 0) cb.SelectedIndex = 0;
+            }
+            catch { }
+            SetComboDropDownWidth(cb);
+        }
+
+        /// <summary>刷新所有文件工作区的密码文件下拉框（新建/导入保存后调用，实时展示 pwd 目录）</summary>
+        private void RefreshAllFileWorkspacePwdCombos()
+        {
+            for (int i = 0; i < _tabWorkspaces.TabPages.Count; i++)
+            {
+                var tab = _tabWorkspaces.TabPages[i];
+                if (tab?.Tag is not WorkspaceContext ctx || ctx.Kind != "文件" || ctx.CbPwdFile == null) continue;
+                string? current = null;
+                if (ctx.CbPwdFile.SelectedIndex > 0 && ctx.CbPwdFile.SelectedItem is string s && s != "(未选择)")
+                    current = s;
+                RefreshFileWorkspacePwdCombo(ctx.CbPwdFile, preserveSelectedFileName: current);
+            }
+        }
+
+        private void SelectSourceFiles(WorkspaceContext ctx)
+        {
+            using var dlg = new OpenFileDialog
+            {
+                Title = "选择要加密/解密的文件",
+                Multiselect = true,
+                CheckFileExists = true
+            };
+            if (dlg.ShowDialog(this) != DialogResult.OK || dlg.FileNames.Length == 0) return;
+            var lv = ctx.FileListView;
+            if (lv == null) return;
+            foreach (var path in dlg.FileNames)
+                AddPathToList(lv, path);
+            ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已添加 {dlg.FileNames.Length} 个文件。{Environment.NewLine}");
+        }
+
+        private void SelectSourceFolder(WorkspaceContext ctx)
+        {
+            using var dlg = new FolderBrowserDialog { Description = "选择要加密/解密的文件夹" };
+            if (dlg.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dlg.SelectedPath)) return;
+            var lv = ctx.FileListView;
+            if (lv == null) return;
+            AddPathToList(lv, dlg.SelectedPath);
+            ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已添加文件夹: {dlg.SelectedPath}{Environment.NewLine}");
+        }
+
+        private List<string> GetFilePathsFromContext(WorkspaceContext ctx)
+        {
+            var list = new List<string>();
+            if (ctx.FileListView != null)
+            {
+                foreach (ListViewItem item in ctx.FileListView.Items)
+                {
+                    if (item.SubItems.Count > 1)
+                    {
+                        var path = item.SubItems[1].Text;
+                        if (!string.IsNullOrWhiteSpace(path)) list.Add(path);
+                    }
+                }
+            }
+            if (list.Count == 0 && !string.IsNullOrWhiteSpace(ctx.SourcePath))
+                list.Add(ctx.SourcePath);
+            return list;
+        }
+
+        private void UpdateFileListItemPathStatus(ListView? lv, string sourcePath, string outPath, string status)
+        {
+            if (lv == null) return;
+            foreach (ListViewItem item in lv.Items)
+            {
+                if (item.SubItems.Count <= 1) continue;
+                if (!string.Equals(item.SubItems[1].Text, sourcePath, StringComparison.OrdinalIgnoreCase)) continue;
+                item.SubItems[0].Text = Path.GetFileName(outPath);
+                item.SubItems[1].Text = outPath;
+                if (item.SubItems.Count > 3) item.SubItems[3].Text = status;
+                break;
+            }
+        }
+
+        private async Task ExecuteEncryptWorkspace(WorkspaceContext ctx)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(ctx.SourcePath))
+                var paths = GetFilePathsFromContext(ctx);
+                if (paths.Count == 0)
                 {
-                    ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 请先选择源文件。{Environment.NewLine}");
-                    _statusLeft.Text = "未选择源文件。";
+                    ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 请先添加文件或选择源。{Environment.NewLine}");
+                    _statusLeft.Text = "未选择文件。";
                     return;
                 }
 
-                string password = PromptPassword();
+                string? password = GetPasswordFromFileWorkspace(ctx);
                 if (string.IsNullOrWhiteSpace(password))
                 {
                     ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已取消：密码为空。{Environment.NewLine}");
                     return;
                 }
 
-                string source = ctx.SourcePath;
-                string baseDir = System.IO.Path.GetDirectoryName(source) ?? System.IO.Path.GetPathRoot(source)!;
-                string outDir = System.IO.Path.Combine(baseDir, "output");
-                System.IO.Directory.CreateDirectory(outDir);
+                bool packExe = ctx.ChkPackExe?.Checked ?? false;
+                bool inPlace = ctx.ChkOverwrite?.Checked ?? false;
+                var algorithm = MapAlgorithm(ctx.CbAlgo);
 
-                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 开始加密: {source}{Environment.NewLine}");
                 _statusLeft.Text = "执行加密中…";
-
-                var options = new FileEncryptorOptions
+                var log = new Action<string>(msg =>
                 {
-                    SourcePath = source,
-                    OutputRoot = outDir,
-                    InPlace = false,
-                    Recursive = false,
-                    RandomizeFileName = false,
-                    Algorithm = CryptoAlgorithm.AesCbc,
-                    Password = password,
-                    Iterations = 200_000,
-                    AesKeySizeBits = 256,
-                    Log = msg =>
+                    if (string.IsNullOrWhiteSpace(msg)) return;
+                    ctx.LogBox.Invoke(() => ctx.LogBox.AppendText(msg + Environment.NewLine));
+                });
+
+                foreach (var source in paths)
+                {
+                    if (!File.Exists(source) && !Directory.Exists(source)) { log($"跳过不存在: {source}"); continue; }
+                    bool isDir = Directory.Exists(source);
+                    string baseDir = Path.GetDirectoryName(source) ?? source;
+                    string outDir = inPlace ? (isDir ? source : baseDir) : Path.Combine(isDir ? source : baseDir, "output");
+                    if (!inPlace) Directory.CreateDirectory(outDir);
+
+                    if (packExe && !isDir)
                     {
-                        if (string.IsNullOrWhiteSpace(msg)) return;
-                        ctx.LogBox.Invoke(new Action(() =>
+                        var template = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "encryptTools.self.exe");
+                        if (!File.Exists(template)) template = Application.ExecutablePath;
+                        if (string.IsNullOrWhiteSpace(template) || !File.Exists(template))
                         {
-                            ctx.LogBox.AppendText(msg + Environment.NewLine);
-                        }));
+                            log($"[{DateTime.Now:HH:mm:ss}] 封装EXE失败：未找到模板 encryptTools.self.exe 或当前程序。");
+                            continue;
+                        }
+
+                        var outExe = Path.Combine(outDir, Path.GetFileNameWithoutExtension(source) + ".exe");
+                        log($"[{DateTime.Now:HH:mm:ss}] 开始封装EXE: {source} -> {outExe}");
+                        log($"[{DateTime.Now:HH:mm:ss}] 使用模板: {template}");
+
+                        var tmpEnc = Path.Combine(Path.GetTempPath(), "encryptTools_pack_" + Guid.NewGuid().ToString("N") + ".enc");
+                        try
+                        {
+                            var crypto = new CryptoService();
+                            await crypto.EncryptFileAsync(source, tmpEnc, algorithm, password, 200_000, 256, null, CancellationToken.None);
+                            log($"[{DateTime.Now:HH:mm:ss}] 已生成临时加密文件: {tmpEnc}");
+
+                            var encBytes = File.ReadAllBytes(tmpEnc);
+                            var meta = new ExePayload.PayloadMeta { Type = "file", Note = "encryptTools packed payload" };
+                            ExePayload.WritePackedExe(template, outExe, meta, encBytes);
+
+                            log($"[{DateTime.Now:HH:mm:ss}] 已写入封装EXE: {outExe}");
+                            UpdateFileListItemPathStatus(ctx.FileListView, source, outExe, "已封装EXE");
+                            if (inPlace)
+                            {
+                                try
+                                {
+                                    File.Delete(source);
+                                    log($"[{DateTime.Now:HH:mm:ss}] 已删除源文件: {source}");
+                                }
+                                catch (Exception exDel)
+                                {
+                                    log($"[{DateTime.Now:HH:mm:ss}] 删除源文件失败: {exDel.Message}");
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            log($"[{DateTime.Now:HH:mm:ss}] 封装EXE失败: {ex.Message}");
+                        }
+                        finally
+                        {
+                            try
+                            {
+                                if (File.Exists(tmpEnc))
+                                {
+                                    File.Delete(tmpEnc);
+                                    log($"[{DateTime.Now:HH:mm:ss}] 已删除临时文件: {tmpEnc}");
+                                }
+                            }
+                            catch (Exception exTmp)
+                            {
+                                log($"[{DateTime.Now:HH:mm:ss}] 删除临时文件失败: {exTmp.Message}");
+                            }
+                        }
+                        continue;
                     }
-                };
 
-                var enc = new FileEncryptor(options);
-                var dummyProgress = new System.Progress<double>(_ => { });
-                await enc.EncryptAsync(dummyProgress, System.Threading.CancellationToken.None);
-
-                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 加密完成，输出目录: {outDir}{Environment.NewLine}");
+                    string? lastOut = null;
+                    var interceptLog = new Action<string>(m =>
+                    {
+                        if (!string.IsNullOrWhiteSpace(m) && m.StartsWith("加密:", StringComparison.Ordinal))
+                        {
+                            var i = m.IndexOf("->", StringComparison.Ordinal);
+                            if (i > 0) { var p = m.Substring(i + 2).Trim(); if (!string.IsNullOrWhiteSpace(p)) lastOut = p; }
+                        }
+                        log(m);
+                    });
+                    var options = new FileEncryptorOptions
+                    {
+                        SourcePath = source,
+                        OutputRoot = outDir,
+                        InPlace = inPlace,
+                        Recursive = isDir,
+                        RandomizeFileName = false,
+                        Algorithm = algorithm,
+                        Password = password,
+                        Iterations = 200_000,
+                        AesKeySizeBits = 256,
+                        Log = interceptLog
+                    };
+                    var enc = new FileEncryptor(options);
+                    await enc.EncryptAsync(new Progress<double>(_ => { }), CancellationToken.None);
+                    var ext = GetEncryptedExtension(algorithm);
+                    var outPath = isDir ? outDir : (lastOut ?? Path.Combine(outDir, Path.GetFileName(source) + ext));
+                    UpdateFileListItemPathStatus(ctx.FileListView, source, outPath, "已加密");
+                }
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 加密完成。{Environment.NewLine}");
                 _statusLeft.Text = "加密完成。";
             }
             catch (Exception ex)
@@ -1019,6 +1115,131 @@ namespace EncryptTools
                 ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 加密失败: {ex.Message}{Environment.NewLine}");
                 _statusLeft.Text = "加密失败。";
             }
+        }
+
+        private async Task ExecuteDecryptWorkspace(WorkspaceContext ctx)
+        {
+            try
+            {
+                var paths = GetFilePathsFromContext(ctx);
+                if (paths.Count == 0)
+                {
+                    ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 请先添加文件或选择源。{Environment.NewLine}");
+                    _statusLeft.Text = "未选择文件。";
+                    return;
+                }
+
+                string? password = GetPasswordFromFileWorkspace(ctx);
+                if (string.IsNullOrWhiteSpace(password))
+                {
+                    ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已取消：密码为空。{Environment.NewLine}");
+                    return;
+                }
+
+                bool inPlace = ctx.ChkOverwrite?.Checked ?? false;
+                _statusLeft.Text = "执行解密中…";
+                var log = new Action<string>(msg =>
+                {
+                    if (string.IsNullOrWhiteSpace(msg)) return;
+                    ctx.LogBox.Invoke(() => ctx.LogBox.AppendText(msg + Environment.NewLine));
+                });
+
+                foreach (var source in paths)
+                {
+                    if (!File.Exists(source) && !Directory.Exists(source)) { log($"跳过不存在: {source}"); continue; }
+                    bool isDir = Directory.Exists(source);
+                    string outDir = inPlace ? (isDir ? source : (Path.GetDirectoryName(source) ?? source)) : (isDir ? Path.Combine(source, "output") : Path.Combine(Path.GetDirectoryName(source) ?? source, "output"));
+                    if (!inPlace) Directory.CreateDirectory(outDir);
+
+                    if (!isDir && Path.GetExtension(source).Equals(".exe", StringComparison.OrdinalIgnoreCase) && ExePayload.HasPayload(source))
+                    {
+                        try
+                        {
+                            if (!ExePayload.TryReadPayload(source, out var meta, out var encBytes) || encBytes == null)
+                            {
+                                log($"封装EXE载荷读取失败: {source}");
+                                continue;
+                            }
+                            var tmpEnc = Path.Combine(Path.GetTempPath(), "encryptTools_exe_dec_" + Guid.NewGuid().ToString("N") + ".enc");
+                            await File.WriteAllBytesAsync(tmpEnc, encBytes);
+                            var tmpOut = Path.Combine(outDir, "decrypt_" + Guid.NewGuid().ToString("N") + ".tmp");
+                            var crypto = new CryptoService();
+                            CryptoService.DecryptResult result;
+                            try
+                            {
+                                result = await crypto.DecryptFileAsync(tmpEnc, tmpOut, password, null, CancellationToken.None);
+                            }
+                            finally { try { File.Delete(tmpEnc); } catch { } }
+                            var desiredName = string.IsNullOrWhiteSpace(result.OriginalFileName) ? Path.GetFileNameWithoutExtension(source) + "_decrypted" : SanitizeFileNameLocal(result.OriginalFileName);
+                            var outPath = Path.Combine(outDir, desiredName);
+                            try { if (File.Exists(outPath)) File.Delete(outPath); } catch { }
+                            File.Move(tmpOut, outPath, overwrite: true);
+                            UpdateFileListItemPathStatus(ctx.FileListView, source, outPath, "正常");
+                            if (inPlace) { try { File.Delete(source); } catch { } }
+                        }
+                        catch (Exception ex) { log($"封装EXE解密失败: {source} - {ex.Message}"); }
+                        continue;
+                    }
+
+                    string? finalOut = null;
+                    var interceptLog = new Action<string>(m =>
+                    {
+                        if (!string.IsNullOrWhiteSpace(m))
+                        {
+                            if (m.StartsWith("最终输出文件:", StringComparison.Ordinal)) finalOut = m.Substring("最终输出文件:".Length).Trim();
+                            else if (m.StartsWith("解密:", StringComparison.Ordinal))
+                            {
+                                var i = m.IndexOf("->", StringComparison.Ordinal);
+                                if (i > 0) finalOut = m.Substring(i + 2).Trim();
+                            }
+                        }
+                        log(m);
+                    });
+                    var options = new FileEncryptorOptions
+                    {
+                        SourcePath = source,
+                        OutputRoot = outDir,
+                        InPlace = inPlace,
+                        Recursive = isDir,
+                        RandomizeFileName = false,
+                        Algorithm = CryptoAlgorithm.AesCbc,
+                        Password = password,
+                        Iterations = 200_000,
+                        AesKeySizeBits = 256,
+                        Log = interceptLog
+                    };
+                    var enc = new FileEncryptor(options);
+                    await enc.DecryptAsync(new Progress<double>(_ => { }), CancellationToken.None);
+                    var decName = DeriveDecryptedFileName(Path.GetFileName(source));
+                    var decPath = isDir ? outDir : (finalOut ?? Path.Combine(outDir, decName));
+                    UpdateFileListItemPathStatus(ctx.FileListView, source, decPath, "正常");
+                }
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 解密完成。{Environment.NewLine}");
+                _statusLeft.Text = "解密完成。";
+            }
+            catch (Exception ex)
+            {
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 解密失败: {ex.Message}{Environment.NewLine}");
+                _statusLeft.Text = "解密失败。";
+            }
+        }
+
+        private static string DeriveDecryptedFileName(string encryptedName)
+        {
+            foreach (var ext in new[] { ".enc", ".aes", ".aesgcm", ".3des", ".xor" })
+                if (encryptedName.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
+                    return encryptedName.Substring(0, encryptedName.Length - ext.Length);
+            return encryptedName + ".dec";
+        }
+
+        private static string SanitizeFileNameLocal(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "output.bin";
+            var invalid = Path.GetInvalidFileNameChars();
+            var sb = new System.Text.StringBuilder();
+            foreach (var c in name) sb.Append(Array.IndexOf(invalid, c) >= 0 ? '_' : c);
+            var s = sb.ToString().TrimEnd(' ', '.');
+            return string.IsNullOrWhiteSpace(s) ? "output.bin" : s;
         }
 
         private string PromptPassword()
@@ -1053,9 +1274,27 @@ namespace EncryptTools
             return dlg.ShowDialog(this) == DialogResult.OK ? txt.Text : string.Empty;
         }
 
-        private void ShowSettings()
+        private void ShowNewPasswordFile()
         {
-            MessageBox.Show(this, "设置对话框占位。", "设置", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            PasswordFileService.EnsurePwdDirectory();
+            using var dlg = new CreatePasswordFileForm(PasswordFileService.GetPwdDirectory());
+            if (dlg.ShowDialog(this) == DialogResult.OK)
+                RefreshAllFileWorkspacePwdCombos();
+        }
+
+        private void ShowImportPasswordFile()
+        {
+            PasswordFileService.EnsurePwdDirectory();
+            using var dlg = new ImportPasswordFileForm(PasswordFileService.GetPwdDirectory());
+            if (dlg.ShowDialog(this) == DialogResult.OK)
+                RefreshAllFileWorkspacePwdCombos();
+        }
+
+        private void ShowEditPasswordFile()
+        {
+            PasswordFileService.EnsurePwdDirectory();
+            using var dlg = new EditPasswordFileForm(PasswordFileService.GetPwdDirectory());
+            dlg.ShowDialog(this);
         }
 
         private void OpenHelp()

@@ -38,6 +38,7 @@ namespace EncryptTools
                 cfg.OutputPath = Get(dict, "OutputPath");
                 cfg.PasswordFileName = Get(dict, "PasswordFileName", "password.pwd");
                 cfg.PasswordMode = Get(dict, "PasswordMode", "file");
+                cfg.LastPasswordFileName = Get(dict, "LastPasswordFileName", "");
             }
             catch { }
             return cfg;
@@ -54,6 +55,7 @@ namespace EncryptTools
                     "OutputPath=" + (cfg.OutputPath ?? ""),
                     "PasswordMode=" + (cfg.PasswordMode ?? "file"),
                     "PasswordFileName=" + (cfg.PasswordFileName ?? "password.pwd"),
+                    "LastPasswordFileName=" + (cfg.LastPasswordFileName ?? ""),
                 });
             }
             catch { }
@@ -76,6 +78,8 @@ namespace EncryptTools
         public string OutputPath { get; set; } = "";
         public string PasswordMode { get; set; } = "file"; // input|file
         public string PasswordFileName { get; set; } = "password.pwd";
+        /// <summary>上次在工作区下拉中选择的密码文件名（不含路径），用于恢复选择。</summary>
+        public string LastPasswordFileName { get; set; } = "";
     }
 }
 
