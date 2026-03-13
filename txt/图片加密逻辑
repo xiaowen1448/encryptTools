@@ -1,0 +1,407 @@
+程序需要实现 5 个核心模块：
+
+ImageLoader        图片读取模块
+MaskGenerator      遮挡生成模块
+IconOverlay        图标覆盖模块
+KeyManager         密钥文件管理
+ImageEncryptor     加密解密控制
+
+流程结构：
+
+拖入图片
+   ↓
+读取图片
+   ↓
+加载密码文件
+   ↓
+生成随机遮挡
+   ↓
+图标覆盖
+   ↓
+保存加密图片
+
+解密流程：
+
+拖入加密图片
+   ↓
+读取metadata
+   ↓
+加载密码文件
+   ↓
+恢复遮挡序列
+   ↓
+恢复原始像素
+   ↓
+输出原图
+二、开发环境
+
+建议环境：
+
+语言：C#
+框架：.NET 6+
+图像库：ImageSharp
+
+安装库：
+
+SixLabors.ImageSharp
+三、密码文件设计
+
+密码文件用于生成随机遮挡。
+
+文件名：
+
+image.key
+
+结构：
+
+Header      8 bytes
+Seed        8 bytes
+Salt        16 bytes
+Version     1 byte
+
+示例：
+
+IMGKEY01
+918273645
+83472910
+1
+
+读取逻辑：
+
+读取 seed
+初始化随机数生成器
+四、图片读取模块
+
+模块名称：
+
+ImageLoader
+
+输入：
+
+文件路径
+
+输出：
+
+Image对象
+
+步骤：
+
+1 读取图片文件
+2 解析为像素数据
+3 获取：
+
+width
+height
+pixel buffer
+
+伪代码：
+
+image = Image.Load(path)
+
+width = image.Width
+height = image.Height
+五、图片分块逻辑
+
+图片需要分块处理。
+
+定义：
+
+blockSize = 32
+
+计算：
+
+blockX = width / blockSize
+blockY = height / blockSize
+
+总块数：
+
+blockCount = blockX * blockY
+
+块结构：
+
+struct Block
+{
+    int x
+    int y
+    int width
+    int height
+}
+六、遮挡生成模块
+
+模块名称：
+
+MaskGenerator
+
+输入：
+
+seed
+blockCount
+maskRatio
+
+输出：
+
+maskBlocks[]
+
+maskRatio 示例：
+
+0.7
+
+表示：
+
+70%区域被遮挡
+
+生成逻辑：
+
+Random(seed)
+
+for each block
+    r = random()
+    if r < maskRatio
+        add block to mask
+七、个性化图标加载
+
+模块：
+
+IconLoader
+
+用户可以提供：
+
+icon.png
+
+建议尺寸：
+
+32x32
+
+支持多个图标：
+
+icon1.png
+icon2.png
+icon3.png
+
+程序随机选择：
+
+random(iconList)
+八、图标覆盖模块
+
+模块名称：
+
+IconOverlay
+
+输入：
+
+image
+maskBlocks
+icon
+
+处理逻辑：
+
+循环所有遮挡块：
+
+for block in maskBlocks
+
+计算位置：
+
+posX = block.x * blockSize
+posY = block.y * blockSize
+
+绘制图标：
+
+draw icon at (posX,posY)
+
+伪代码：
+
+for block in maskBlocks
+{
+    icon = random(iconList)
+    draw icon at block position
+}
+九、个性化效果增强
+
+建议增加：
+
+图标旋转
+
+随机角度：
+
+0
+90
+180
+270
+图标透明度
+alpha = random(60%-100%)
+图标缩放
+scale = random(0.8 - 1.2)
+
+这样每个 block 都不同。
+
+十、保存原始像素数据
+
+为了恢复图片，必须保存被覆盖区域原始数据。
+
+保存方式：
+
+加密后写入图片尾部。
+
+结构：
+
+OriginalPixelDataLength
+EncryptedPixelData
+
+原始像素需要：
+
+AES加密
+
+保存内容：
+
+block index
+original pixels
+十一、metadata 写入
+
+图片 metadata 写入：
+
+IMG-ENCRYPTED
+VERSION
+BLOCKSIZE
+SEED
+MASKRATIO
+
+示例：
+
+IMG-ENC-V1
+block=32
+seed=918273645
+ratio=0.7
+
+写入：
+
+EXIF
+
+或
+
+PNG text chunk
+十二、加密流程
+
+完整加密流程：
+
+1 用户拖入图片
+2 加载密码文件
+3 读取seed
+4 读取图片
+5 计算block
+6 生成maskBlocks
+7 保存原始像素
+8 绘制icon
+9 写入metadata
+10 保存图片
+
+输出：
+
+encrypted_image.png
+十三、解密流程
+1 用户拖入图片
+2 读取metadata
+3 加载密码文件
+4 获取seed
+5 重新生成maskBlocks
+6 读取尾部原始像素
+7 恢复像素
+8 保存原图
+十四、批量处理逻辑
+
+拖入文件夹：
+
+程序需要：
+
+递归扫描
+
+伪代码：
+
+scan(folder)
+
+for file in folder
+    if image
+        encrypt(file)
+
+支持格式：
+
+jpg
+png
+bmp
+webp
+十五、输出目录逻辑
+
+如果未勾选覆盖源文件：
+
+创建：
+
+output/
+
+路径：
+
+input目录同级
+
+示例：
+
+photos/
+output/
+
+输出：
+
+output/photo1.png
+output/photo2.png
+十六、错误处理
+
+需要处理：
+
+图片损坏
+
+跳过。
+
+密钥不匹配
+
+提示：
+
+密钥文件错误
+metadata 不存在
+
+提示：
+
+不是加密图片
+十七、性能优化
+
+对于大图片：
+
+4K
+8K
+
+建议：
+
+Parallel.For
+
+并行处理 blocks。
+
+十八、最终效果
+
+加密图片：
+
+⭐ ⭐ ⭐ ⭐
+⭐ ⭐ ⭐ ⭐
+⭐ ⭐ ⭐ ⭐
+
+用户可以：
+
+打开
+预览
+分享
+
+但无法看到原始内容。
+
+十九、推荐扩展
+
+建议增加：
+
+像素打乱
+RGB XOR
+图标遮挡
+
+三层保护。

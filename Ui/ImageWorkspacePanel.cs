@@ -62,7 +62,7 @@ namespace EncryptTools.Ui
                 Padding = new Padding(8, 6, 8, 6)
             };
             var btnSelect = new Button { Text = "选择图片", AutoSize = true, Margin = new Padding(0, 0, 8, 4) };
-            var lblHint = new Label { Text = "支持多选、拖拽图片或文件夹", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 6, 16, 0) };
+            var lblHint = new Label { Text = "支持拖拽", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 6, 16, 0) };
             _cbMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(100, 0) };
             _cbMode.Items.AddRange(new object[] { "不可逆马赛克(仅效果)", "密钥置乱(可逆)", "像素XOR(可逆)", "分块置乱(可逆)", "Arnold猫映射(可逆)" });
             _cbMode.SelectedIndex = 1;
@@ -285,6 +285,15 @@ namespace EncryptTools.Ui
             var password = TryLoadPasswordFromPwdFile();
             if (string.IsNullOrEmpty(password)) return;
 
+            // 当前所选密码文件名（仅文件名部分），用于与元数据中的 PasswordFileName 比较
+            string? currentPwdFileName = null;
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(_passwordFilePath))
+                    currentPwdFileName = Path.GetFileName(_passwordFilePath);
+            }
+            catch { }
+
             int total = _sheetTabs.TabPages.Count;
             for (int i = 0; i < total; i++)
             {
@@ -302,6 +311,14 @@ namespace EncryptTools.Ui
                 if (state.Options == null)
                 {
                     _log($"[{DateTime.Now:HH:mm:ss}] 跳过(缺少元数据): {Path.GetFileName(state.Path)}");
+                    continue;
+                }
+                // 若为新格式（包含 PasswordFileName），但当前选择的密码文件与加密时记录的不一致，则直接提示并跳过解密
+                if (!string.IsNullOrWhiteSpace(state.Options.PasswordFileName) &&
+                    !string.IsNullOrWhiteSpace(currentPwdFileName) &&
+                    !string.Equals(state.Options.PasswordFileName, currentPwdFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    _log($"[{DateTime.Now:HH:mm:ss}] 密码文件错误: {Path.GetFileName(state.Path)}，请选用加密时使用的密码文件。");
                     continue;
                 }
                 if (state.Options.Mode == ImageMode.Mosaic)
@@ -384,6 +401,8 @@ namespace EncryptTools.Ui
             public int Iterations { get; set; } = 200_000;
             public int ArnoldIterations { get; set; } = 10;
             public string SaltBase64 { get; set; } = "";
+            /// <summary>加密时使用的密码文件名（例如 xxxx.pwd），用于解密时校验是否选对密码文件。</summary>
+            public string? PasswordFileName { get; set; }
         }
 
         private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".gif" };
@@ -672,7 +691,7 @@ namespace EncryptTools.Ui
             int block = _cbBlock.SelectedIndex switch { 0 => 4, 1 => 8, 2 => 16, _ => 32 };
             var salt = new byte[16];
             EncryptTools.Compat.RngFill(salt);
-            return new ImageEffectOptions
+            var opt = new ImageEffectOptions
             {
                 Mode = (ImageMode)Math.Max(0, _cbMode.SelectedIndex),
                 BlockSize = block,
@@ -680,6 +699,14 @@ namespace EncryptTools.Ui
                 ArnoldIterations = (int)_numArnoldIterations.Value,
                 SaltBase64 = Convert.ToBase64String(salt)
             };
+            // 记录当前所选密码文件名（仅文件名），用于解密时校验是否选对密码文件。旧元数据无此字段则不强制。
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(_passwordFilePath))
+                    opt.PasswordFileName = Path.GetFileName(_passwordFilePath);
+            }
+            catch { }
+            return opt;
         }
 
         private Bitmap ApplyPixelEffect(Image src, ImageEffectOptions options, string? password, bool encrypt)

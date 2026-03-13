@@ -1,0 +1,4 @@
+D:\xiaowen_1448\encryptTools\dist\encryptTools_gcm_temp\EncryptTools.GcmCli.exe
+D:\xiaowen_1448\encryptTools\dist\encryptTools_gcm_temp\EncryptTools.GcmCli.dll
+D:\xiaowen_1448\encryptTools\dist\encryptTools_gcm_temp\EncryptTools.GcmCli.deps.json
+D:\xiaowen_1448\encryptTools\dist\encryptTools_gcm_temp\EncryptTools.GcmCli.runtimeconfig.json

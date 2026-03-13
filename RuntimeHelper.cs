@@ -77,14 +77,13 @@ namespace EncryptTools
         }
 
         /// <summary>
-        /// 若当前不支持 AES-GCM，返回需要安装 .NET 8 的提示文案。
+        /// 若当前不支持 AES-GCM 且需提示用户时使用（例如解密到 GCM 文件但本机无 .NET 8）。
         /// </summary>
         public static string GetAesGcmRequirementMessage()
         {
-            return "使用 AES-GCM 需要安装 .NET 8 运行时。\n\n"
-                + "请从以下地址下载并安装 .NET 8 桌面运行时：\n"
-                + "https://dotnet.microsoft.com/zh-cn/download/dotnet/8.0\n\n"
-                + "安装后需使用基于 .NET 8 的加密工具版本才能执行 AES-GCM。";
+            return "该文件为 AES-GCM 加密。本机未检测到 .NET 8，无法解密。\n\n"
+                + "请安装 .NET 8 桌面运行时后重试：\n"
+                + "https://dotnet.microsoft.com/zh-cn/download/dotnet/8.0";
         }
     }
 }

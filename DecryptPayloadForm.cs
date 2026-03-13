@@ -4,6 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Windows.Forms;
 
 namespace EncryptTools
@@ -189,10 +190,27 @@ namespace EncryptTools
                 {
                     result = await crypto.DecryptFileAsync(tempEnc, outTemp, password, progress: null, ct: System.Threading.CancellationToken.None);
                 }
-                catch
+                catch (NotSupportedException ex) when (ex.Message != null && (ex.Message.IndexOf("AES-GCM", StringComparison.Ordinal) >= 0 || ex.Message.IndexOf("需要", StringComparison.Ordinal) >= 0))
                 {
                     try { File.Delete(outTemp); } catch { }
-                    FailAndSelfDelete("密码错误。");
+                    _lblStatus.ForeColor = Color.Firebrick;
+                    _lblStatus.Text = "该载荷为 AES-GCM 加密，当前运行环境不支持解密。";
+                    _btnDecrypt.Enabled = true;
+                    _btnBrowsePwd.Enabled = true;
+                    _cbMode.Enabled = true;
+                    _txtValue.Enabled = true;
+                    return;
+                }
+                catch (CryptographicException)
+                {
+                    try { File.Delete(outTemp); } catch { }
+                    FailAndSelfDelete("密码或密钥错误。");
+                    return;
+                }
+                catch (Exception)
+                {
+                    try { File.Delete(outTemp); } catch { }
+                    FailAndSelfDelete("解密失败。");
                     return;
                 }
                 finally
@@ -200,10 +218,59 @@ namespace EncryptTools
                     try { File.Delete(tempEnc); } catch { }
                 }
 
-                var desiredName = SanitizeFileName(result.OriginalFileName) ?? "output.bin";
-                var outPath = GetNonConflictingPath(Path.Combine(outDir, desiredName));
-                Compat.FileMoveOverwrite(outTemp, outPath);
+                if (!File.Exists(outTemp))
+                {
+                    _lblStatus.ForeColor = Color.Firebrick;
+                    _lblStatus.Text = "解密未生成有效文件。";
+                    _btnDecrypt.Enabled = true;
+                    _btnBrowsePwd.Enabled = true;
+                    _cbMode.Enabled = true;
+                    _txtValue.Enabled = true;
+                    return;
+                }
+                long outTempLen = new FileInfo(outTemp).Length;
+                if (outTempLen == 0)
+                {
+                    try { File.Delete(outTemp); } catch { }
+                    _lblStatus.ForeColor = Color.Firebrick;
+                    _lblStatus.Text = "解密结果为空文件。";
+                    _btnDecrypt.Enabled = true;
+                    _btnBrowsePwd.Enabled = true;
+                    _cbMode.Enabled = true;
+                    _txtValue.Enabled = true;
+                    return;
+                }
 
+                var desiredName = SanitizeFileName(result.OriginalFileName) ?? "output.bin";
+                if (string.IsNullOrWhiteSpace(desiredName)) desiredName = "output.bin";
+                var outPath = GetNonConflictingPath(Path.Combine(outDir, desiredName));
+                try
+                {
+                    Compat.FileMoveOverwrite(outTemp, outPath);
+                }
+                catch (Exception ex)
+                {
+                    _lblStatus.ForeColor = Color.Firebrick;
+                    _lblStatus.Text = "释放文件失败：" + (ex.Message ?? "未知错误") + "。临时文件：" + outTemp;
+                    _btnDecrypt.Enabled = true;
+                    _btnBrowsePwd.Enabled = true;
+                    _cbMode.Enabled = true;
+                    _txtValue.Enabled = true;
+                    return;
+                }
+
+                if (!File.Exists(outPath) || new FileInfo(outPath).Length == 0)
+                {
+                    _lblStatus.ForeColor = Color.Firebrick;
+                    _lblStatus.Text = "释放后文件不存在或为空。";
+                    _btnDecrypt.Enabled = true;
+                    _btnBrowsePwd.Enabled = true;
+                    _cbMode.Enabled = true;
+                    _txtValue.Enabled = true;
+                    return;
+                }
+
+                _lblStatus.ForeColor = Color.DarkGreen;
                 _lblStatus.Text = "解密完成：" + outPath;
                 try
                 {
@@ -211,12 +278,17 @@ namespace EncryptTools
                 }
                 catch { }
 
-                // 解密成功后删除 EXE 源文件
+                // 解密成功且文件已释放后再删除 EXE 源文件
                 try { ScheduleSelfDeleteAndExit(_exePath); } catch { }
             }
-            catch
+            catch (Exception ex)
             {
-                FailAndSelfDelete("解密失败。");
+                _lblStatus.ForeColor = Color.Firebrick;
+                _lblStatus.Text = "解密失败：" + (ex.Message ?? "未知错误");
+                _btnDecrypt.Enabled = true;
+                _btnBrowsePwd.Enabled = true;
+                _cbMode.Enabled = true;
+                _txtValue.Enabled = true;
             }
         }
 

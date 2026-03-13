@@ -35,7 +35,7 @@ namespace EncryptTools
         {
             public string Kind = "文件加密";
             public string? SourcePath;
-            public TextBox LogBox = null!;
+            public TextBoxBase LogBox = null!;
             // 文件工作区控件引用（Kind=="文件"时使用）
             public ListView? FileListView;
             public CheckBox? ChkPackExe;
@@ -43,6 +43,9 @@ namespace EncryptTools
             public TextBox? TxtPassword;
             public ComboBox? CbPwdFile;
             public ComboBox? CbAlgo;
+            public ComboBox? CbSuffix;
+            /// <summary>不勾选覆盖时，上次加密使用的输出目录（UUID_密码文件名_output），解密时从此目录读取。</summary>
+            public string? LastNonInPlaceOutputRoot;
         }
 
         public WorkspaceForm()
@@ -321,21 +324,36 @@ namespace EncryptTools
 
             var lblAlgo = new Label { Text = "算法:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
             var cbAlgo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 2), MinimumSize = new Size(120, 0) };
-            // 当前为 .NET 8 可执行 GCM；本机已装 .NET 8 时也显示 GCM 选项，执行时再检查并提示
+            // 算法列表：AES-256-GCM 仅在检测到 .NET 8 环境时才可选，其他算法完全兼容 .NET 4.6/4.8
+            var algoItems = new List<string>();
             if (RuntimeHelper.IsNet8OrHigher || RuntimeHelper.IsNet8InstalledOnMachine)
-            {
-                cbAlgo.Items.AddRange(new object[] { "AES-256-GCM", "AES-128-CBC", "ChaCha20-Poly1305", "SM4" });
-            }
-            else
-            {
-                cbAlgo.Items.AddRange(new object[] { "AES-128-CBC", "ChaCha20-Poly1305", "SM4" });
-            }
+                algoItems.Add("AES-256-GCM");
+            algoItems.Add("AES-128-CBC");
+            algoItems.Add("ChaCha20-Poly1305");
+            algoItems.Add("SM4");
+            cbAlgo.Items.AddRange(algoItems.ToArray());
             cbAlgo.SelectedIndex = 0;
             SetComboDropDownWidth(cbAlgo);
             var lblSuffix = new Label { Text = "后缀:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
-            var cbSuffix = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 2), MinimumSize = new Size(70, 0) };
-            cbSuffix.Items.AddRange(new object[] { ".enc", ".aes", ".aesgcm", ".secure" });
-            cbSuffix.SelectedIndex = 0;
+            // 允许下拉选择常用后缀，也支持手动输入自定义后缀
+            var cbSuffix = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDown,
+                Margin = new Padding(2, 2, 8, 2),
+                MinimumSize = new Size(70, 0)
+            };
+            // 常用后缀列表
+            cbSuffix.Items.AddRange(new object[]
+            {
+                ".enc1",
+                ".enc2",
+                ".enc",
+                ".aes",
+                ".bin",
+                ".dat",
+                ".secure"
+            });
+            cbSuffix.SelectedItem = ".enc1";
             SetComboDropDownWidth(cbSuffix);
             var lblPwd = new Label { Text = "密码文件:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
             var cbPwdFile = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 2), MinimumSize = new Size(140, 0) };
@@ -403,11 +421,11 @@ namespace EncryptTools
 
             tab.Controls.Add(root);
 
-            var logBox = new TextBox
+            var logBox = new RichTextBox
             {
                 Multiline = true,
                 ReadOnly = true,
-                ScrollBars = ScrollBars.Vertical,
+                ScrollBars = RichTextBoxScrollBars.Vertical,
                 Dock = DockStyle.Fill
             };
             var ctx = new WorkspaceContext
@@ -420,7 +438,8 @@ namespace EncryptTools
                 ChkOverwrite = chkOverwrite,
                 TxtPassword = null,
                 CbPwdFile = cbPwdFile,
-                CbAlgo = cbAlgo
+                CbAlgo = cbAlgo,
+                CbSuffix = cbSuffix
             };
             tab.Tag = ctx;
 
@@ -431,6 +450,38 @@ namespace EncryptTools
                 btnDecrypt.Enabled = hasPwd;
             }
             cbPwdFile.SelectedIndexChanged += (_, __) => UpdateEncryptDecryptEnabled();
+            // 算法变化时自动联动默认后缀：AES-256-GCM -> .enc2，其它 -> .enc1
+            void SyncSuffixWithAlgo()
+            {
+                if (cbAlgo.SelectedItem is string algText)
+                {
+                    if (algText.StartsWith("AES-256-GCM", StringComparison.OrdinalIgnoreCase))
+                        cbSuffix.Text = ".enc2";
+                    else
+                        cbSuffix.Text = ".enc1";
+                }
+            }
+            cbAlgo.SelectedIndexChanged += (_, __) => SyncSuffixWithAlgo();
+            SyncSuffixWithAlgo();
+            // 手动输入自定义后缀后，统一清洗并自动加入下拉列表，方便下次选择
+            cbSuffix.Validated += (_, __) =>
+            {
+                var t = cbSuffix.Text;
+                if (string.IsNullOrWhiteSpace(t)) return;
+                t = SanitizeExtensionLocalForSuffix(t);
+                cbSuffix.Text = t;
+                bool exists = false;
+                foreach (var item in cbSuffix.Items)
+                {
+                    if (item is string s && string.Equals(s, t, StringComparison.OrdinalIgnoreCase))
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists)
+                    cbSuffix.Items.Add(t);
+            };
             UpdateEncryptDecryptEnabled();
 
             btnSelectFile.Click += (_, __) => SelectSourceFiles(ctx);
@@ -846,16 +897,44 @@ namespace EncryptTools
             return CryptoAlgorithm.AesCbc;
         }
 
+        /// <summary>根据后缀下拉框选择返回加密扩展名；若未选择则按算法返回 .enc1 / .enc2。</summary>
+        private static string GetSelectedEncryptedExtension(ComboBox? cbSuffix, CryptoAlgorithm alg)
+        {
+            if (cbSuffix != null)
+            {
+                var s = cbSuffix.Text;
+                if (!string.IsNullOrWhiteSpace(s))
+                    return SanitizeExtensionLocalForSuffix(s);
+            }
+            return GetEncryptedExtension(alg);
+        }
+
+        /// <summary>清洗用户在后缀下拉框中输入的自定义后缀，例如补充前导点、去掉非法字符、限制长度。</summary>
+        private static string SanitizeExtensionLocalForSuffix(string ext)
+        {
+            if (string.IsNullOrWhiteSpace(ext))
+                return ".enc1";
+            ext = ext.Trim();
+            if (!ext.StartsWith(".", StringComparison.Ordinal))
+                ext = "." + ext;
+            var invalid = Path.GetInvalidFileNameChars();
+            var sb = new System.Text.StringBuilder(ext.Length);
+            foreach (var c in ext)
+                sb.Append(Array.IndexOf(invalid, c) >= 0 ? '_' : c);
+            if (sb.Length == 1 && sb[0] == '.')
+            {
+                sb.Append("enc1");
+            }
+            if (sb.Length > 16)
+            {
+                sb.Length = 16;
+            }
+            return sb.ToString();
+        }
+
         private static string GetEncryptedExtension(CryptoAlgorithm alg)
         {
-            return alg switch
-            {
-                CryptoAlgorithm.AesCbc => ".aes",
-                CryptoAlgorithm.AesGcm => ".aesgcm",
-                CryptoAlgorithm.TripleDes => ".3des",
-                CryptoAlgorithm.Xor => ".xor",
-                _ => ".enc"
-            };
+            return alg == CryptoAlgorithm.AesGcm ? ".enc2" : ".enc1";
         }
 
         private string? GetPasswordFromFileWorkspace(WorkspaceContext ctx)
@@ -870,6 +949,13 @@ namespace EncryptTools
                 }
             }
             return null;
+        }
+
+        private static string GetPasswordFileStem(WorkspaceContext ctx)
+        {
+            if (ctx.CbPwdFile?.SelectedItem is string name && !string.IsNullOrWhiteSpace(name) && name != "(未选择)")
+                return Path.GetFileNameWithoutExtension(name);
+            return "pwd";
         }
 
         private static void SetComboDropDownWidth(ComboBox cb)
@@ -979,6 +1065,53 @@ namespace EncryptTools
             return list;
         }
 
+        /// <summary>
+        /// 去掉被其他路径包含的子路径，避免递归时同一文件被处理多次（如同时拖入 D:\test 和 D:\test\子文件夹）。
+        /// </summary>
+        private static List<string> RemoveNestedPaths(List<string> paths)
+        {
+            if (paths == null || paths.Count <= 1) return paths ?? new List<string>();
+            var normalized = new List<(string original, string full)>();
+            char sep = Path.DirectorySeparatorChar;
+            foreach (var p in paths)
+            {
+                try
+                {
+                    string full = Path.GetFullPath(p);
+                    if (Directory.Exists(full))
+                        full = full.TrimEnd(sep, Path.AltDirectorySeparatorChar) + sep;
+                    normalized.Add((p, full));
+                }
+                catch
+                {
+                    normalized.Add((p, p));
+                }
+            }
+            var result = new List<string>();
+            for (int i = 0; i < normalized.Count; i++)
+            {
+                var (orig, full) = normalized[i];
+                bool underOther = false;
+                for (int j = 0; j < normalized.Count; j++)
+                {
+                    if (i == j) continue;
+                    string otherFull = normalized[j].full;
+                    if (!Directory.Exists(normalized[j].original))
+                        continue;
+                    if (otherFull.Length > 0 && otherFull[otherFull.Length - 1] != sep)
+                        otherFull = otherFull + sep;
+                    if (full.StartsWith(otherFull, StringComparison.OrdinalIgnoreCase) && full.Length > otherFull.Length)
+                    {
+                        underOther = true;
+                        break;
+                    }
+                }
+                if (!underOther)
+                    result.Add(orig);
+            }
+            return result.Count > 0 ? result : new List<string> { paths[0] };
+        }
+
         private void UpdateFileListItemPathStatus(ListView? lv, string sourcePath, string outPath, string status)
         {
             if (lv == null) return;
@@ -993,6 +1126,138 @@ namespace EncryptTools
             }
         }
 
+        /// <summary>
+        /// 不勾选覆盖时，所有拖入项共用一个 output 目录；若拖入路径已在 output 内则不再嵌套 output/output。
+        /// </summary>
+        private static string GetCommonOutputRoot(List<string> paths, bool inPlace)
+        {
+            if (inPlace || paths == null || paths.Count == 0)
+                return "";
+            string parent = GetCommonParentOnly(paths);
+            if (string.IsNullOrEmpty(parent))
+                return Path.Combine(Environment.CurrentDirectory, "output");
+            string name = Path.GetFileName(parent.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (string.Equals(name, "output", StringComparison.OrdinalIgnoreCase))
+                return parent;
+            return Path.Combine(parent, "output");
+        }
+
+        /// <summary>
+        /// 在父目录下查找所有符合 "UUID_密码名_output" 的输出目录，用于不覆盖时一次解密多次加密产生的多个目录。
+        /// </summary>
+        private static List<string> GetNonInPlaceOutputFolders(string parentDir)
+        {
+            var list = new List<string>();
+            if (string.IsNullOrEmpty(parentDir) || !Directory.Exists(parentDir)) return list;
+            try
+            {
+                foreach (string dir in Directory.GetDirectories(parentDir))
+                {
+                    string name = Path.GetFileName(dir);
+                    if (name != null && name.EndsWith("_output", StringComparison.OrdinalIgnoreCase) && name.IndexOf('_') >= 0)
+                        list.Add(dir);
+                }
+            }
+            catch { }
+            return list;
+        }
+
+        /// <summary>
+        /// 取所有路径的公共父目录（不追加 output），用于解密时定位 output 文件夹。
+        /// </summary>
+        private static string GetCommonParentOnly(List<string> paths)
+        {
+            if (paths == null || paths.Count == 0)
+                return "";
+            var dirs = new List<string>();
+            foreach (var p in paths)
+            {
+                try
+                {
+                    var full = Path.GetFullPath(p);
+                    if (Directory.Exists(full))
+                        dirs.Add(full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                    else
+                        dirs.Add(Path.GetDirectoryName(full) ?? full);
+                }
+                catch { }
+            }
+            if (dirs.Count == 0) return "";
+            string common = dirs[0];
+            for (int i = 1; i < dirs.Count; i++)
+            {
+                var other = dirs[i];
+                while (common.Length > 0 && !other.StartsWith(common, StringComparison.OrdinalIgnoreCase))
+                {
+                    var lastSep = common.LastIndexOf(Path.DirectorySeparatorChar);
+                    if (lastSep <= 0) { common = ""; break; }
+                    common = common.Substring(0, lastSep);
+                }
+                if (common.Length > 0 && other.Length > common.Length && other[common.Length] != Path.DirectorySeparatorChar)
+                {
+                    var lastSep = common.LastIndexOf(Path.DirectorySeparatorChar);
+                    if (lastSep > 0) common = common.Substring(0, lastSep);
+                }
+            }
+            if (string.IsNullOrEmpty(common)) common = Path.GetPathRoot(dirs[0]) ?? Environment.CurrentDirectory;
+            return common;
+        }
+
+        private static bool IsSourceAlreadyEncryptedInOutput(string source, bool isDir, string commonOutputRoot, CryptoAlgorithm algorithm)
+        {
+            if (string.IsNullOrEmpty(commonOutputRoot) || !Directory.Exists(commonOutputRoot))
+                return false;
+            string ext = GetEncryptedExtension(algorithm);
+            if (!isDir)
+            {
+                string fileName = Path.GetFileName(source);
+                bool nameAlreadyHasExt = fileName.EndsWith(".enc1", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".enc2", StringComparison.OrdinalIgnoreCase);
+                string outPath = Path.Combine(commonOutputRoot, nameAlreadyHasExt ? fileName : fileName + ext);
+                return File.Exists(outPath);
+            }
+            try
+            {
+                string root = Path.GetFullPath(source).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                foreach (string file in Directory.EnumerateFiles(source, "*", System.IO.SearchOption.AllDirectories))
+                {
+                    string rel = file.StartsWith(root, StringComparison.OrdinalIgnoreCase)
+                        ? file.Substring(root.Length)
+                        : Path.GetFileName(file);
+                    bool relAlreadyHasExt = rel.EndsWith(".enc1", StringComparison.OrdinalIgnoreCase) || rel.EndsWith(".enc2", StringComparison.OrdinalIgnoreCase);
+                    string outPath = Path.Combine(commonOutputRoot, relAlreadyHasExt ? rel : rel + ext);
+                    if (!File.Exists(outPath))
+                        return false;
+                }
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static readonly string[] EncryptedExtensions = new[] { ".enc1", ".enc2" };
+
+        private static int CountEncryptedFilesInFolder(string dir)
+        {
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+                return 0;
+            try
+            {
+                int n = 0;
+                foreach (string f in Directory.EnumerateFiles(dir, "*", System.IO.SearchOption.AllDirectories))
+                {
+                    if (EncryptedExtensions.Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase)))
+                        n++;
+                }
+                return n;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
         private async Task ExecuteEncryptWorkspace(WorkspaceContext ctx)
         {
             try
@@ -1004,6 +1269,9 @@ namespace EncryptTools
                     _statusLeft.Text = "未选择文件。";
                     return;
                 }
+                paths = RemoveNestedPaths(paths);
+                // 去重相同路径，避免重复处理 / 重复日志
+                paths = new List<string>(new HashSet<string>(paths, StringComparer.OrdinalIgnoreCase));
 
                 string? password = GetPasswordFromFileWorkspace(ctx);
                 if (string.IsNullOrWhiteSpace(password))
@@ -1015,27 +1283,41 @@ namespace EncryptTools
                 bool packExe = ctx.ChkPackExe?.Checked ?? false;
                 bool inPlace = ctx.ChkOverwrite?.Checked ?? false;
                 var algorithm = MapAlgorithm(ctx.CbAlgo);
-                if (algorithm == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher)
-                {
-                    MessageBox.Show(RuntimeHelper.GetAesGcmRequirementMessage(), "需要 .NET 8", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    _statusLeft.Text = "就绪";
-                    return;
-                }
+                var encryptedExt = GetSelectedEncryptedExtension(ctx.CbSuffix, algorithm);
+                // 单 exe 兼容：不拦截；加密时自动用 GcmRunner（.NET 8 已装）或 CBC（未装）
 
                 _statusLeft.Text = "执行加密中…";
-                var log = new Action<string>(msg =>
-                {
-                    if (string.IsNullOrWhiteSpace(msg)) return;
-                    ctx.LogBox.Invoke(() => ctx.LogBox.AppendText(msg + Environment.NewLine));
-                });
+                // 统一由外层拦截并精简日志，这里不直接写入日志框
+                var log = new Action<string>(_ => { });
 
+                string commonOutputRoot;
+                if (inPlace)
+                    commonOutputRoot = "";
+                else
+                {
+                    string parent = GetCommonParentOnly(paths);
+                    if (string.IsNullOrEmpty(parent))
+                        parent = Environment.CurrentDirectory;
+                    commonOutputRoot = Path.Combine(parent, Guid.NewGuid().ToString("N") + "_" + GetPasswordFileStem(ctx) + "_output");
+                    ctx.LastNonInPlaceOutputRoot = commonOutputRoot;
+                    Directory.CreateDirectory(commonOutputRoot);
+                }
+
+                bool loggedAlreadyEncrypted = false;
                 foreach (var source in paths)
                 {
-                    if (!File.Exists(source) && !Directory.Exists(source)) { log($"跳过不存在: {source}"); continue; }
+                    if (!File.Exists(source) && !Directory.Exists(source)) { continue; }
                     bool isDir = Directory.Exists(source);
                     string baseDir = Path.GetDirectoryName(source) ?? source;
-                    string outDir = inPlace ? (isDir ? source : baseDir) : Path.Combine(isDir ? source : baseDir, "output");
-                    if (!inPlace) Directory.CreateDirectory(outDir);
+                    string outDir = inPlace ? (isDir ? source : baseDir) : commonOutputRoot;
+
+                    if (!inPlace && !packExe && IsSourceAlreadyEncryptedInOutput(source, isDir, commonOutputRoot, algorithm))
+                    {
+                        string showPath = isDir ? outDir : source;
+                        UpdateFileListItemPathStatus(ctx.FileListView, source, showPath, "已加密");
+                        // 目录中所有文件都已在 output 中存在时，不再重复输出日志，直接跳过
+                        continue;
+                    }
 
                     if (packExe && !isDir)
                     {
@@ -1054,8 +1336,21 @@ namespace EncryptTools
                         var tmpEnc = Path.Combine(Path.GetTempPath(), "encryptTools_pack_" + Guid.NewGuid().ToString("N") + ".enc");
                         try
                         {
-                            var crypto = new CryptoService();
-                            await crypto.EncryptFileAsync(source, tmpEnc, algorithm, password, 200_000, 256, null, CancellationToken.None);
+                            bool packUseGcm = (algorithm == CryptoAlgorithm.AesGcm && RuntimeHelper.IsNet8InstalledOnMachine && !RuntimeHelper.IsNet8OrHigher);
+                            CryptoAlgorithm packAlgo = algorithm;
+                            if (algorithm == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher && !RuntimeHelper.IsNet8InstalledOnMachine)
+                                packAlgo = CryptoAlgorithm.AesCbc;
+
+                            if (packUseGcm)
+                            {
+                                bool ok = await GcmRunner.EncryptAsync(source, tmpEnc, password, m => log($"[{DateTime.Now:HH:mm:ss}] {m}")).ConfigureAwait(false);
+                                if (!ok) { log($"[{DateTime.Now:HH:mm:ss}] 封装EXE失败: GCM 加密失败"); continue; }
+                            }
+                            else
+                            {
+                                var crypto = new CryptoService();
+                                await crypto.EncryptFileAsync(source, tmpEnc, packAlgo, password, 200_000, 256, null, CancellationToken.None);
+                            }
                             log($"[{DateTime.Now:HH:mm:ss}] 已生成临时加密文件: {tmpEnc}");
 
                             var encBytes = File.ReadAllBytes(tmpEnc);
@@ -1102,12 +1397,28 @@ namespace EncryptTools
                     string? lastOut = null;
                     var interceptLog = new Action<string>(m =>
                     {
-                        if (!string.IsNullOrWhiteSpace(m) && m.StartsWith("加密:", StringComparison.Ordinal))
+                        if (string.IsNullOrWhiteSpace(m)) return;
+
+                        // 只对真正执行加密的文件输出一行精简日志：已加密 xxx
+                        if (m.StartsWith("加密:", StringComparison.Ordinal))
                         {
                             var i = m.IndexOf("->", StringComparison.Ordinal);
-                            if (i > 0) { var p = m.Substring(i + 2).Trim(); if (!string.IsNullOrWhiteSpace(p)) lastOut = p; }
+                            if (i > 0)
+                            {
+                                var dest = m.Substring(i + 2).Trim();
+                                if (!string.IsNullOrWhiteSpace(dest))
+                                {
+                                    lastOut = dest;
+                                    try
+                                    {
+                                        ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已加密: {dest}{Environment.NewLine}");
+                                    }
+                                    catch { }
+                                }
+                            }
+                            return;
                         }
-                        log(m);
+                        // 其它诸如“已加密，跳过 / 跳过不存在 / 无权限访问”等内部日志全部忽略
                     });
                     var options = new FileEncryptorOptions
                     {
@@ -1120,12 +1431,16 @@ namespace EncryptTools
                         Password = password,
                         Iterations = 200_000,
                         AesKeySizeBits = 256,
-                        Log = interceptLog
+                        Log = interceptLog,
+                        EncryptedExtension = encryptedExt
                     };
                     var enc = new FileEncryptor(options);
                     await enc.EncryptAsync(new Progress<double>(_ => { }), CancellationToken.None);
-                    var ext = GetEncryptedExtension(algorithm);
-                    var outPath = isDir ? outDir : (lastOut ?? Path.Combine(outDir, Path.GetFileName(source) + ext));
+                    var ext = encryptedExt;
+                    bool pathAlreadyEncrypted = source.EndsWith(".enc1", StringComparison.OrdinalIgnoreCase) || source.EndsWith(".enc2", StringComparison.OrdinalIgnoreCase);
+                    var outPath = isDir ? outDir : (pathAlreadyEncrypted ? Path.Combine(outDir, Path.GetFileName(source)) : (lastOut ?? Path.Combine(outDir, Path.GetFileName(source) + ext)));
+                    if (!inPlace)
+                        outPath = source;
                     UpdateFileListItemPathStatus(ctx.FileListView, source, outPath, "已加密");
                 }
                 ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 加密完成。{Environment.NewLine}");
@@ -1149,6 +1464,7 @@ namespace EncryptTools
                     _statusLeft.Text = "未选择文件。";
                     return;
                 }
+                paths = RemoveNestedPaths(paths);
 
                 string? password = GetPasswordFromFileWorkspace(ctx);
                 if (string.IsNullOrWhiteSpace(password))
@@ -1159,18 +1475,109 @@ namespace EncryptTools
 
                 bool inPlace = ctx.ChkOverwrite?.Checked ?? false;
                 _statusLeft.Text = "执行解密中…";
-                var log = new Action<string>(msg =>
-                {
-                    if (string.IsNullOrWhiteSpace(msg)) return;
-                    ctx.LogBox.Invoke(() => ctx.LogBox.AppendText(msg + Environment.NewLine));
-                });
+                // 解密同样只对实际处理的文件输出“已解密 xxx”，其它内部日志全部忽略
+                var log = new Action<string>(_ => { });
 
-                foreach (var source in paths)
+                string commonParent = GetCommonParentOnly(paths);
+                // 非覆盖模式下，从工作区路径的上级目录中查找所有 UUID_pwd_output 目录；
+                // 如果当前公共父目录本身是 *_output，则回退到其上级目录，避免只找到其中一个。
+                string searchRoot = commonParent;
+                if (!string.IsNullOrEmpty(searchRoot))
                 {
-                    if (!File.Exists(source) && !Directory.Exists(source)) { log($"跳过不存在: {source}"); continue; }
+                    var name = Path.GetFileName(searchRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                    if (!string.IsNullOrEmpty(name) &&
+                        name.EndsWith("_output", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var parentOfOutput = Path.GetDirectoryName(searchRoot);
+                        if (!string.IsNullOrEmpty(parentOfOutput))
+                            searchRoot = parentOfOutput;
+                    }
+                }
+
+                var outputFolders = inPlace ? new List<string>() : GetNonInPlaceOutputFolders(searchRoot);
+
+                // 如果工作区中本身就拖入了某个 *_output 目录，也一并加入解密列表
+                if (!inPlace)
+                {
+                    foreach (var p in paths)
+                    {
+                        try
+                        {
+                            if (Directory.Exists(p))
+                            {
+                                var name = Path.GetFileName(Path.GetFullPath(p).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                                if (!string.IsNullOrEmpty(name) &&
+                                    name.EndsWith("_output", StringComparison.OrdinalIgnoreCase) &&
+                                    !outputFolders.Any(d => string.Equals(d, p, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    outputFolders.Add(p);
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                if (!inPlace && outputFolders.Count == 0 && !string.IsNullOrEmpty(ctx.LastNonInPlaceOutputRoot))
+                    outputFolders.Add(ctx.LastNonInPlaceOutputRoot);
+                // 旧版 common output 目录逻辑不再使用 UUID_output 方案，这里不再强制追加虚构的 output 目录
+
+                if (!inPlace && outputFolders.Count > 0)
+                {
+                    int totalEnc = 0;
+                    foreach (var dir in outputFolders)
+                        totalEnc += CountEncryptedFilesInFolder(dir);
+                    if (totalEnc == 0)
+                    {
+                        foreach (var p in paths)
+                            UpdateFileListItemPathStatus(ctx.FileListView, p, p, "已解密");
+                        _statusLeft.Text = "已解密。";
+                        return;
+                    }
+                }
+
+                var decryptSources = inPlace ? paths : outputFolders;
+                foreach (var source in decryptSources)
+                {
+                    if (!File.Exists(source) && !Directory.Exists(source))
+                    {
+                        continue;
+                    }
+
                     bool isDir = Directory.Exists(source);
-                    string outDir = inPlace ? (isDir ? source : (Path.GetDirectoryName(source) ?? source)) : (isDir ? Path.Combine(source, "output") : Path.Combine(Path.GetDirectoryName(source) ?? source, "output"));
-                    if (!inPlace) Directory.CreateDirectory(outDir);
+
+                    // 已解密文件 / 目录智能跳过：
+                    // - 覆盖模式：文件若无 WXENC001 头或目录内没有任何加密文件，则视为已解密，路径与状态不再修改；
+                    // - 非覆盖模式：仅当 *_output 目录内还存在加密文件时才执行解密。
+                    if (inPlace)
+                    {
+                        if (!isDir)
+                        {
+                            if (!CryptoService.IsWxEncryptedFile(source))
+                            {
+                                continue;
+                            }
+                        }
+                        else
+                        {
+                            if (CountEncryptedFilesInFolder(source) == 0)
+                            {
+                                continue;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 非覆盖模式下，只有目录才会出现在解密源列表；若目录内已无加密文件则直接静默跳过
+                        if (isDir && CountEncryptedFilesInFolder(source) == 0)
+                        {
+                            continue;
+                        }
+                    }
+
+                    string outDir = inPlace ? (isDir ? source : (Path.GetDirectoryName(source) ?? source)) : source;
+
+                    if (!inPlace)
+                        isDir = true;
 
                     if (!isDir && Path.GetExtension(source).Equals(".exe", StringComparison.OrdinalIgnoreCase) && ExePayload.HasPayload(source))
                     {
@@ -1184,11 +1591,27 @@ namespace EncryptTools
                             var tmpEnc = Path.Combine(Path.GetTempPath(), "encryptTools_exe_dec_" + Guid.NewGuid().ToString("N") + ".enc");
                             await Compat.FileWriteAllBytesAsync(tmpEnc, encBytes);
                             var tmpOut = Path.Combine(outDir, "decrypt_" + Guid.NewGuid().ToString("N") + ".tmp");
-                            var crypto = new CryptoService();
                             CryptoService.DecryptResult result;
                             try
                             {
-                                result = await crypto.DecryptFileAsync(tmpEnc, tmpOut, password, null, CancellationToken.None);
+                                var (peekAlg, peekName) = CryptoService.PeekEncryptedFileInfo(tmpEnc);
+                                if (peekAlg == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher && RuntimeHelper.IsNet8InstalledOnMachine)
+                                {
+                                    bool ok = await GcmRunner.DecryptAsync(tmpEnc, tmpOut, password, null).ConfigureAwait(false);
+                                    if (!ok) { log($"封装EXE解密失败: {source} - GCM 执行失败"); try { File.Delete(tmpEnc); } catch { } continue; }
+                                    result = new CryptoService.DecryptResult { OriginalFileName = peekName };
+                                }
+                                else if (peekAlg == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher)
+                                {
+                                    log($"封装EXE解密失败: {source} - 载荷为 GCM 加密，本机未安装 .NET 8");
+                                    try { File.Delete(tmpEnc); } catch { }
+                                    continue;
+                                }
+                                else
+                                {
+                                    var crypto = new CryptoService();
+                                    result = await crypto.DecryptFileAsync(tmpEnc, tmpOut, password, null, CancellationToken.None);
+                                }
                             }
                             finally { try { File.Delete(tmpEnc); } catch { } }
                             var desiredName = string.IsNullOrWhiteSpace(result.OriginalFileName) ? Path.GetFileNameWithoutExtension(source) + "_decrypted" : SanitizeFileNameLocal(result.OriginalFileName);
@@ -1205,16 +1628,32 @@ namespace EncryptTools
                     string? finalOut = null;
                     var interceptLog = new Action<string>(m =>
                     {
-                        if (!string.IsNullOrWhiteSpace(m))
+                        if (string.IsNullOrWhiteSpace(m)) return;
+
+                        if (m.StartsWith("最终输出文件:", StringComparison.Ordinal))
                         {
-                            if (m.StartsWith("最终输出文件:", StringComparison.Ordinal)) finalOut = m.Substring("最终输出文件:".Length).Trim();
-                            else if (m.StartsWith("解密:", StringComparison.Ordinal))
-                            {
-                                var i = m.IndexOf("->", StringComparison.Ordinal);
-                                if (i > 0) finalOut = m.Substring(i + 2).Trim();
-                            }
+                            finalOut = m.Substring("最终输出文件:".Length).Trim();
+                            return;
                         }
-                        log(m);
+                        if (m.StartsWith("解密:", StringComparison.Ordinal))
+                        {
+                            var i = m.IndexOf("->", StringComparison.Ordinal);
+                            if (i > 0)
+                            {
+                                finalOut = m.Substring(i + 2).Trim();
+                                var dest = finalOut;
+                                if (!string.IsNullOrWhiteSpace(dest))
+                                {
+                                    try
+                                    {
+                                        ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已解密: {dest}{Environment.NewLine}");
+                                    }
+                                    catch { }
+                                }
+                            }
+                            return;
+                        }
+                        // 其它内部日志全部忽略
                     });
                     var options = new FileEncryptorOptions
                     {
@@ -1232,8 +1671,21 @@ namespace EncryptTools
                     var enc = new FileEncryptor(options);
                     await enc.DecryptAsync(new Progress<double>(_ => { }), CancellationToken.None);
                     var decName = DeriveDecryptedFileName(Path.GetFileName(source));
-                    var decPath = isDir ? outDir : (finalOut ?? Path.Combine(outDir, decName));
+                    string decPath;
+                    if (finalOut != null)
+                        decPath = isDir ? outDir : finalOut;
+                    else if (source.EndsWith(".enc1", StringComparison.OrdinalIgnoreCase) || source.EndsWith(".enc2", StringComparison.OrdinalIgnoreCase))
+                        decPath = isDir ? outDir : Path.Combine(outDir, decName);
+                    else
+                        decPath = source;
+                    if (!inPlace)
+                        decPath = source;
                     UpdateFileListItemPathStatus(ctx.FileListView, source, decPath, "正常");
+                }
+                if (!inPlace && paths.Count > 0)
+                {
+                    foreach (var p in paths)
+                        UpdateFileListItemPathStatus(ctx.FileListView, p, p, "已解密");
                 }
                 ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 解密完成。{Environment.NewLine}");
                 _statusLeft.Text = "解密完成。";
@@ -1251,12 +1703,31 @@ namespace EncryptTools
             }
         }
 
+        private static void AppendLogWithRed(TextBoxBase logBox, string msg)
+        {
+            const string redKeyword = "本机未安装 .NET 8";
+            bool useRed = msg != null && msg.IndexOf(redKeyword, StringComparison.Ordinal) >= 0;
+            if (logBox is RichTextBox rtb && useRed)
+            {
+                rtb.Select(rtb.TextLength, 0);
+                rtb.SelectionColor = Color.Red;
+                rtb.AppendText(msg + Environment.NewLine);
+                rtb.SelectionColor = rtb.ForeColor;
+            }
+            else
+            {
+                logBox.AppendText(msg + Environment.NewLine);
+            }
+        }
+
         private static string DeriveDecryptedFileName(string encryptedName)
         {
-            foreach (var ext in new[] { ".enc", ".aes", ".aesgcm", ".3des", ".xor" })
-                if (encryptedName.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
-                    return encryptedName.Substring(0, encryptedName.Length - ext.Length);
-            return encryptedName + ".dec";
+            if (encryptedName.EndsWith(".enc2", StringComparison.OrdinalIgnoreCase))
+                return encryptedName.Substring(0, encryptedName.Length - 5);
+            if (encryptedName.EndsWith(".enc1", StringComparison.OrdinalIgnoreCase))
+                return encryptedName.Substring(0, encryptedName.Length - 5);
+            // 规范化：仅支持 .enc1 / .enc2 作为加密扩展名，其他情况直接返回原名
+            return encryptedName;
         }
 
         private static string SanitizeFileNameLocal(string? name)

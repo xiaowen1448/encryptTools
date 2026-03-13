@@ -42,7 +42,14 @@ namespace EncryptTools
 
     public class CryptoService
     {
-        private const string Magic = "ENC1";
+        /// <summary>固定 16 字节文件头：Magic(8) + Version(1) + EncryptType(1) + Reserved(6)。</summary>
+        private static readonly byte[] HeaderMagic = System.Text.Encoding.ASCII.GetBytes("WXENC001");
+        private const int HeaderSize = 16;
+        private const byte HeaderVersion = 1;
+        /// <summary>加密类型一 = AES-CBC，加密类型二 = AES-GCM。</summary>
+        private const byte EncryptTypeCbc = 1;
+        private const byte EncryptTypeGcm = 2;
+
         private const int BufferSize = 4 * 1024 * 1024; // 4MB缓冲区
 
         // 延迟初始化，避免类型初始化时加载 System.Buffers 或 ValueTuple 导致异常
@@ -74,24 +81,28 @@ namespace EncryptTools
             IProgress<long>? progress,
             CancellationToken ct)
         {
+            if (algorithm != CryptoAlgorithm.AesCbc && algorithm != CryptoAlgorithm.AesGcm)
+                throw new NotSupportedException("本格式仅支持加密类型一(AES-CBC)与加密类型二(AES-GCM)。");
+
             var salt = RandomBytes(16);
-            
-            // 优化FileStream配置：使用更大的缓冲区和顺序访问提示
+            byte encryptType = algorithm == CryptoAlgorithm.AesGcm ? EncryptTypeGcm : EncryptTypeCbc;
+
             var fileOptions = FileOptions.SequentialScan | FileOptions.WriteThrough;
             using var outFs = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize, fileOptions);
             using var bw = new BinaryWriter(outFs);
 
-            // Header (ENC3) - 增加原始文件名元数据
-            bw.Write(System.Text.Encoding.ASCII.GetBytes("ENC3"));
-            bw.Write((byte)algorithm);
+            // 固定 16 字节头：Magic(8) + Version(1) + EncryptType(1) + Reserved(6)
+            bw.Write(HeaderMagic);
+            bw.Write(HeaderVersion);
+            bw.Write(encryptType);
+            for (int i = 0; i < 6; i++) bw.Write((byte)0);
+
             bw.Write(iterations);
             bw.Write(salt.Length);
             bw.Write(salt);
-            // Write key size for AES algorithms; others write 0
-            var keySizeToWrite = (algorithm == CryptoAlgorithm.AesCbc || algorithm == CryptoAlgorithm.AesGcm) ? aesKeySizeBits : 0;
+            var keySizeToWrite = aesKeySizeBits;
             bw.Write(keySizeToWrite);
 
-            // 写入原始文件名（仅文件名，不含路径），UTF-8编码
             var originalName = Path.GetFileName(inputPath);
             var nameBytes = System.Text.Encoding.UTF8.GetBytes(originalName);
             bw.Write(nameBytes.Length);
@@ -125,6 +136,54 @@ namespace EncryptTools
             public string? OriginalFileName { get; set; }
         }
 
+        /// <summary>
+        /// 通过文件头 Magic 判断是否为合法加密文件（WXENC001）。不依赖扩展名。
+        /// </summary>
+        public static bool IsWxEncryptedFile(string path)
+        {
+            try
+            {
+                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 16);
+                if (fs.Length < HeaderSize) return false;
+                var buf = new byte[HeaderMagic.Length];
+                if (fs.Read(buf, 0, buf.Length) != buf.Length) return false;
+                for (int i = 0; i < HeaderMagic.Length; i++)
+                    if (buf[i] != HeaderMagic[i]) return false;
+                return true;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// 仅读取加密文件头（16 字节 Magic + 后续元数据），通过文件头标识判断是否为合法加密文件，返回算法和原始文件名。
+        /// </summary>
+        public static (CryptoAlgorithm Algorithm, string? OriginalFileName) PeekEncryptedFileInfo(string inputPath)
+        {
+            using var fs = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read, 512);
+            using var br = new BinaryReader(fs);
+            byte[] header = br.ReadBytes(HeaderSize);
+            if (header.Length < HeaderSize)
+                throw new InvalidDataException("不是有效加密文件");
+            for (int i = 0; i < HeaderMagic.Length; i++)
+                if (header[i] != HeaderMagic[i])
+                    throw new InvalidDataException("不是有效加密文件");
+            byte encryptType = header[9];
+            CryptoAlgorithm alg = encryptType == EncryptTypeGcm ? CryptoAlgorithm.AesGcm : CryptoAlgorithm.AesCbc;
+            if (encryptType != EncryptTypeCbc && encryptType != EncryptTypeGcm)
+                throw new InvalidDataException("解密类型未知，跳过文件");
+
+            br.ReadInt32(); // iterations
+            int saltLen = br.ReadInt32();
+            if (saltLen < 0 || saltLen > 256) throw new InvalidDataException("文件头损坏");
+            br.ReadBytes(saltLen);
+            br.ReadInt32(); // keySizeBits
+            int nameLen = br.ReadInt32();
+            string? originalFileName = null;
+            if (nameLen > 0 && nameLen < 4096)
+                originalFileName = System.Text.Encoding.UTF8.GetString(br.ReadBytes(nameLen));
+            return (alg, originalFileName);
+        }
+
         public async Task<DecryptResult> DecryptFileAsync(
             string inputPath,
             string outputPath,
@@ -132,45 +191,30 @@ namespace EncryptTools
             IProgress<long>? progress,
             CancellationToken ct)
         {
-            // 优化FileStream配置：使用顺序访问提示
             var fileOptions = FileOptions.SequentialScan;
             using var inFs = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, fileOptions);
             using var br = new BinaryReader(inFs);
-            var magic = new byte[4];
-            var readMagic = inFs.Read(magic, 0, magic.Length);
-            if (readMagic != 4 || magic[0] != (byte)'E' || magic[1] != (byte)'N' || magic[2] != (byte)'C')
-                throw new InvalidDataException("文件不是受支持的加密格式");
-            var headerVersion = magic[3];
+            byte[] header = br.ReadBytes(HeaderSize);
+            if (header.Length < HeaderSize)
+                throw new InvalidDataException("不是有效加密文件");
+            for (int i = 0; i < HeaderMagic.Length; i++)
+                if (header[i] != HeaderMagic[i])
+                    throw new InvalidDataException("不是有效加密文件");
+            byte encryptType = header[9];
+            CryptoAlgorithm alg = encryptType == EncryptTypeGcm ? CryptoAlgorithm.AesGcm : CryptoAlgorithm.AesCbc;
+            if (encryptType != EncryptTypeCbc && encryptType != EncryptTypeGcm)
+                throw new NotSupportedException("解密类型未知，跳过文件");
 
-            var alg = (CryptoAlgorithm)br.ReadByte();
             var iterations = br.ReadInt32();
             var saltLen = br.ReadInt32();
+            if (saltLen < 0 || saltLen > 256) throw new InvalidDataException("文件头损坏");
             var salt = br.ReadBytes(saltLen);
-            int aesKeySizeBits = 256; // default for ENC1
+            int aesKeySizeBits = br.ReadInt32();
+            if (aesKeySizeBits == 0) aesKeySizeBits = 256;
             string? originalFileName = null;
-            if (headerVersion == (byte)'2')
-            {
-                aesKeySizeBits = br.ReadInt32();
-                if (aesKeySizeBits == 0 && (alg == CryptoAlgorithm.AesCbc || alg == CryptoAlgorithm.AesGcm))
-                {
-                    aesKeySizeBits = 256; // fallback safety
-                }
-            }
-            else if (headerVersion == (byte)'3')
-            {
-                aesKeySizeBits = br.ReadInt32();
-                if (aesKeySizeBits == 0 && (alg == CryptoAlgorithm.AesCbc || alg == CryptoAlgorithm.AesGcm))
-                {
-                    aesKeySizeBits = 256; // fallback safety
-                }
-                // 读取原始文件名
-                var nameLen = br.ReadInt32();
-                if (nameLen > 0 && nameLen < 1024 * 4) // 简单防御
-                {
-                    var nameBytes = br.ReadBytes(nameLen);
-                    originalFileName = System.Text.Encoding.UTF8.GetString(nameBytes);
-                }
-            }
+            var nameLen = br.ReadInt32();
+            if (nameLen > 0 && nameLen < 4096)
+                originalFileName = System.Text.Encoding.UTF8.GetString(br.ReadBytes(nameLen));
 
             // 优化输出FileStream配置
             var outFileOptions = FileOptions.SequentialScan | FileOptions.WriteThrough;

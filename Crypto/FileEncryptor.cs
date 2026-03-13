@@ -34,13 +34,15 @@ namespace EncryptTools
         public int Iterations { get; set; } = 200_000;
         public int AesKeySizeBits { get; set; } = 256;
         public required Action<string> Log { get; set; }
+        /// <summary>自定义加密后缀名（例如 .enc1 / .enc2），若为空则根据算法自动推导。</summary>
+        public string? EncryptedExtension { get; set; }
     }
 
     public class FileEncryptor
     {
         private readonly FileEncryptorOptions _options;
         private readonly CryptoService _crypto;
-        private static readonly string[] KnownEncryptedExtensions = new[] { ".enc", ".aes", ".aesgcm", ".3des", ".xor" };
+        private static readonly string[] KnownEncryptedExtensions = new[] { ".enc1", ".enc2" };
 
         public FileEncryptor(FileEncryptorOptions options)
         {
@@ -54,30 +56,71 @@ namespace EncryptTools
             long totalBytes = files.Sum(f => new FileInfo(f).Length);
             long processed = 0;
 
+            // 单 exe 兼容：选 GCM 时，未装 .NET 8 自动用 CBC；已装 .NET 8 则用 GcmRunner（或本进程 net8）
+            CryptoAlgorithm effectiveAlgo = _options.Algorithm;
+            bool useGcmRunner = false;
+            if (_options.Algorithm == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher)
+            {
+                if (RuntimeHelper.IsNet8InstalledOnMachine)
+                    useGcmRunner = true;
+                else
+                {
+                    effectiveAlgo = CryptoAlgorithm.AesCbc;
+                    _options.Log?.Invoke("本机未安装 .NET 8，已自动使用 AES-128-CBC。");
+                }
+            }
+
             foreach (var file in files)
             {
                 ct.ThrowIfCancellationRequested();
+                if (CryptoService.IsWxEncryptedFile(file))
+                {
+                    _options.Log?.Invoke($"已加密，跳过: {file}");
+                    continue;
+                }
                 var outFile = GetOutputFilePath(file, encrypt: true);
+                if (!_options.InPlace && File.Exists(outFile))
+                {
+                    _options.Log?.Invoke($"已加密，跳过: {file}");
+                    continue;
+                }
                 Directory.CreateDirectory(Path.GetDirectoryName(outFile)!);
                 _options.Log?.Invoke($"加密: {file} -> {outFile}");
                 try
                 {
-                    await _crypto.EncryptFileAsync(file, outFile, _options.Algorithm, _options.Password, _options.Iterations, _options.AesKeySizeBits, new Progress<long>(bytes =>
+                    if (useGcmRunner)
                     {
-                        processed += bytes;
+                        bool ok = await GcmRunner.EncryptAsync(file, outFile, _options.Password, _options.Log).ConfigureAwait(false);
+                        if (!ok)
+                        {
+                            _options.Log?.Invoke($"加密失败，跳过: {file}（GCM 执行失败，可改用 AES-128-CBC）");
+                            continue;
+                        }
+                        processed += new FileInfo(file).Length;
                         progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
-                    }), ct);
-                }
-                catch (IOException ioEx) when (IsSharingViolation(ioEx))
-                {
-                    // 源文件被占用：强制结束占用进程后重试一次
-                    if (TryForceUnlockFile(file, ioEx))
+                    }
+                    else
                     {
-                        await _crypto.EncryptFileAsync(file, outFile, _options.Algorithm, _options.Password, _options.Iterations, _options.AesKeySizeBits, new Progress<long>(bytes =>
+                        await _crypto.EncryptFileAsync(file, outFile, effectiveAlgo, _options.Password, _options.Iterations, _options.AesKeySizeBits, new Progress<long>(bytes =>
                         {
                             processed += bytes;
                             progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
                         }), ct);
+                    }
+                }
+                catch (IOException ioEx) when (IsSharingViolation(ioEx))
+                {
+                    if (TryForceUnlockFile(file, ioEx))
+                    {
+                        if (useGcmRunner)
+                        {
+                            bool ok = await GcmRunner.EncryptAsync(file, outFile, _options.Password, _options.Log).ConfigureAwait(false);
+                            if (!ok) { _options.Log?.Invoke($"仍被占用或失败，跳过: {file}"); continue; }
+                            processed += new FileInfo(file).Length;
+                            progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
+                        }
+                        else
+                            await _crypto.EncryptFileAsync(file, outFile, effectiveAlgo, _options.Password, _options.Iterations, _options.AesKeySizeBits, new Progress<long>(bytes => { processed += bytes; progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes); }), ct);
                     }
                     else
                     {
@@ -113,7 +156,7 @@ namespace EncryptTools
         public async Task DecryptAsync(IProgress<double> progress, CancellationToken ct)
         {
             var files = CollectFiles(_options.SourcePath, _options.Recursive)
-                .Where(f => KnownEncryptedExtensions.Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase)) || IsEncryptedFile(f))
+                .Where(f => CryptoService.IsWxEncryptedFile(f))
                 .ToList();
 
             long totalBytes = files.Sum(f => new FileInfo(f).Length);
@@ -122,17 +165,67 @@ namespace EncryptTools
             foreach (var file in files)
             {
                 ct.ThrowIfCancellationRequested();
+                try
+                {
+                    CryptoService.PeekEncryptedFileInfo(file);
+                }
+                catch (InvalidDataException)
+                {
+                    _options.Log?.Invoke($"跳过（不是有效加密文件）: {file}");
+                    continue;
+                }
+                catch (Exception)
+                {
+                    _options.Log?.Invoke($"跳过（文件未加密或无法解密）: {file}");
+                    continue;
+                }
+
                 var outFile = GetOutputFilePath(file, encrypt: false);
                 Directory.CreateDirectory(Path.GetDirectoryName(outFile)!);
                 _options.Log?.Invoke($"解密: {file} -> {outFile}");
                 CryptoService.DecryptResult? result = null;
+                string? peekedOriginalName = null;
+                bool usedGcmRunner = false;
+
                 try
                 {
-                    result = await _crypto.DecryptFileAsync(file, outFile, _options.Password, new Progress<long>(bytes =>
+                    CryptoAlgorithm peekAlg = CryptoAlgorithm.AesCbc;
+                    try
                     {
-                        processed += bytes;
-                        progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
-                    }), ct);
+                        var (alg, origName) = CryptoService.PeekEncryptedFileInfo(file);
+                        peekAlg = alg;
+                        peekedOriginalName = origName;
+                    }
+                    catch { }
+
+                    if (peekAlg == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher && RuntimeHelper.IsNet8InstalledOnMachine)
+                    {
+                        bool ok = await GcmRunner.DecryptAsync(file, outFile, _options.Password, _options.Log).ConfigureAwait(false);
+                        if (ok)
+                        {
+                            result = new CryptoService.DecryptResult { OriginalFileName = peekedOriginalName };
+                            usedGcmRunner = true;
+                        }
+                        else
+                        {
+                            _options.Log?.Invoke($"解密失败，跳过: {file}（GCM 执行失败）");
+                            continue;
+                        }
+                    }
+                    else if (peekAlg == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher && !RuntimeHelper.IsNet8InstalledOnMachine)
+                    {
+                        _options.Log?.Invoke($"跳过: {file} - 该文件为 AES-GCM 加密，本机未安装 .NET 8 无法解密。");
+                        continue;
+                    }
+
+                    if (!usedGcmRunner)
+                    {
+                        result = await _crypto.DecryptFileAsync(file, outFile, _options.Password, new Progress<long>(bytes =>
+                        {
+                            processed += bytes;
+                            progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
+                        }), ct);
+                    }
                 }
                 catch (IOException ioEx) when (IsSharingViolation(ioEx))
                 {
@@ -210,6 +303,20 @@ namespace EncryptTools
                         _options.Log?.Invoke($"删除源加密文件失败: {file} - {ex.Message}");
                     }
                 }
+                else
+                {
+                    try
+                    {
+                        if (File.Exists(outFile) && new FileInfo(outFile).Length > 0 && File.Exists(file))
+                        {
+                            TryDeleteSourceFileWithForce(file, isEncryptedSource: true);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _options.Log?.Invoke($"删除源加密文件失败: {file} - {ex.Message}");
+                    }
+                }
             }
         }
 
@@ -234,7 +341,9 @@ namespace EncryptTools
                 if (encrypt)
                 {
                     var dir = Path.GetDirectoryName(source)!;
-                    var ext = GetEncryptedExtension(_options.Algorithm);
+                    var ext = string.IsNullOrWhiteSpace(_options.EncryptedExtension)
+                        ? GetEncryptedExtension(_options.Algorithm)
+                        : _options.EncryptedExtension!;
                     // ← 使用可配置的长度和格式
                     var name = _options.RandomizeFileName 
                         ? GenerateRandomName(_options.RandomFileNameLength, _options.RandomFileNameFormat)
@@ -252,10 +361,13 @@ namespace EncryptTools
                 var relative = MakeRelativeToRoot(source);
                 var targetDir = Path.Combine(root, Path.GetDirectoryName(relative) ?? string.Empty);
                 var fileName = Path.GetFileName(source);
+                var ext = string.IsNullOrWhiteSpace(_options.EncryptedExtension)
+                    ? GetEncryptedExtension(_options.Algorithm)
+                    : _options.EncryptedExtension!;
                 var outName = encrypt
                     ? (_options.RandomizeFileName 
-                        ? GenerateRandomName(_options.RandomFileNameLength, _options.RandomFileNameFormat)  // ← 改这里
-                        : fileName) + GetEncryptedExtension(_options.Algorithm)
+                        ? GenerateRandomName(_options.RandomFileNameLength, _options.RandomFileNameFormat)
+                        : fileName) + ext
                     : DeriveDecryptedName(fileName);
                 return Path.Combine(targetDir, outName);
             }
@@ -278,26 +390,17 @@ namespace EncryptTools
 
         private string DeriveDecryptedName(string encryptedName)
         {
-            foreach (var ext in KnownEncryptedExtensions)
-            {
-                if (encryptedName.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
-                {
-                    return encryptedName.Substring(0, encryptedName.Length - ext.Length);
-                }
-            }
-            return encryptedName + ".dec";
+            if (encryptedName.EndsWith(".enc2", StringComparison.OrdinalIgnoreCase))
+                return encryptedName.Substring(0, encryptedName.Length - 5);
+            if (encryptedName.EndsWith(".enc1", StringComparison.OrdinalIgnoreCase))
+                return encryptedName.Substring(0, encryptedName.Length - 5);
+            // 仅支持 .enc1 / .enc2 作为加密扩展名，其它情况直接返回原名，避免反复追加 .dec
+            return encryptedName;
         }
 
         private static string GetEncryptedExtension(CryptoAlgorithm alg)
         {
-            return alg switch
-            {
-                CryptoAlgorithm.AesCbc => ".aes",
-                CryptoAlgorithm.AesGcm => ".aesgcm",
-                CryptoAlgorithm.TripleDes => ".3des",
-                CryptoAlgorithm.Xor => ".xor",
-                _ => ".enc"
-            };
+            return alg == CryptoAlgorithm.AesGcm ? ".enc2" : ".enc1";
         }
 
         // ====== 改进的随机文件名生成方法 ======
@@ -419,16 +522,7 @@ namespace EncryptTools
 
         private bool IsEncryptedFile(string path)
         {
-            try
-            {
-                using var fs = File.OpenRead(path);
-                var magic = new byte[4];
-                if (fs.Length < 4) return false;
-                var read = fs.Read(magic, 0, 4);
-                if (read != 4) return false;
-                return magic[0] == (byte)'E' && magic[1] == (byte)'N' && magic[2] == (byte)'C' && (magic[3] == (byte)'1' || magic[3] == (byte)'2');
-            }
-            catch { return false; }
+            return CryptoService.IsWxEncryptedFile(path);
         }
 
         private static bool IsSharingViolation(Exception ex)

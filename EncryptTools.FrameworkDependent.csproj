@@ -51,6 +51,11 @@
     <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
 
+  <!-- 不编译 GcmCli 子目录（独立 net8 控制台项目，仅构建后复制到输出）-->
+  <ItemGroup>
+    <Compile Remove="EncryptTools.GcmCli\**" />
+  </ItemGroup>
+
   <!-- 将 Assets 文件夹复制到输出目录（用于运行时加载）-->
   <ItemGroup>
     <Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />

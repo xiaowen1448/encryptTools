@@ -1,0 +1,15 @@
+D:\xiaowen_1448\encryptTools\EncryptTools.GcmCli\bin\Release\net8.0\EncryptTools.GcmCli.exe
+D:\xiaowen_1448\encryptTools\EncryptTools.GcmCli\bin\Release\net8.0\EncryptTools.GcmCli.deps.json
+D:\xiaowen_1448\encryptTools\EncryptTools.GcmCli\bin\Release\net8.0\EncryptTools.GcmCli.runtimeconfig.json
+D:\xiaowen_1448\encryptTools\EncryptTools.GcmCli\bin\Release\net8.0\EncryptTools.GcmCli.dll
+D:\xiaowen_1448\encryptTools\EncryptTools.GcmCli\bin\Release\net8.0\EncryptTools.GcmCli.pdb
+D:\xiaowen_1448\encryptTools\EncryptTools.GcmCli\obj\Release\net8.0\EncryptTools.GcmCli.GeneratedMSBuildEditorConfig.editorconfig
+D:\xiaowen_1448\encryptTools\EncryptTools.GcmCli\obj\Release\net8.0\EncryptTools.GcmCli.AssemblyInfoInputs.cache
+D:\xiaowen_1448\encryptTools\EncryptTools.GcmCli\obj\Release\net8.0\EncryptTools.GcmCli.AssemblyInfo.cs
+D:\xiaowen_1448\encryptTools\EncryptTools.GcmCli\obj\Release\net8.0\EncryptTools.GcmCli.csproj.CoreCompileInputs.cache
+D:\xiaowen_1448\encryptTools\EncryptTools.GcmCli\obj\Release\net8.0\EncryptTools.GcmCli.sourcelink.json
+D:\xiaowen_1448\encryptTools\EncryptTools.GcmCli\obj\Release\net8.0\EncryptTools.GcmCli.dll
+D:\xiaowen_1448\encryptTools\EncryptTools.GcmCli\obj\Release\net8.0\refint\EncryptTools.GcmCli.dll
+D:\xiaowen_1448\encryptTools\EncryptTools.GcmCli\obj\Release\net8.0\EncryptTools.GcmCli.pdb
+D:\xiaowen_1448\encryptTools\EncryptTools.GcmCli\obj\Release\net8.0\EncryptTools.GcmCli.genruntimeconfig.cache
+D:\xiaowen_1448\encryptTools\EncryptTools.GcmCli\obj\Release\net8.0\ref\EncryptTools.GcmCli.dll
