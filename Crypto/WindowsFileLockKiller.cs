@@ -92,7 +92,11 @@ namespace EncryptTools
                         var name = "";
                         try { name = p.ProcessName; } catch { }
                         log?.Invoke($"源文件被占用，强制结束进程 PID={pid}{(string.IsNullOrEmpty(name) ? "" : " (" + name + ")")} …");
+#if NET48
+                        p.Kill();
+#else
                         p.Kill(entireProcessTree: true);
+#endif
                         p.WaitForExit(2000);
                         killedPids.Add(pid);
                     }

@@ -670,7 +670,8 @@ namespace EncryptTools.Ui
         private ImageEffectOptions BuildOptionsFromUi()
         {
             int block = _cbBlock.SelectedIndex switch { 0 => 4, 1 => 8, 2 => 16, _ => 32 };
-            var salt = RandomNumberGenerator.GetBytes(16);
+            var salt = new byte[16];
+            EncryptTools.Compat.RngFill(salt);
             return new ImageEffectOptions
             {
                 Mode = (ImageMode)Math.Max(0, _cbMode.SelectedIndex),
@@ -732,7 +733,7 @@ namespace EncryptTools.Ui
         {
             if (string.IsNullOrEmpty(password)) throw new InvalidOperationException("missing password");
             var key = DeriveKey(password, options, 32);
-            int seed = BitConverter.ToInt32(SHA256.HashData(key), 0);
+            int seed = BitConverter.ToInt32(EncryptTools.Compat.Sha256Hash(key), 0);
             return PermutePixels(bmp, seed, encrypt);
         }
 
@@ -822,7 +823,12 @@ namespace EncryptTools.Ui
                 int offset = 0;
                 while (offset < len)
                 {
+#if NET48
+                    var ctrBytes = BitConverter.GetBytes(ctr++);
+                    for (int i = 0; i < 8; i++) counter[i] = ctrBytes[i];
+#else
                     BitConverter.TryWriteBytes(counter, ctr++);
+#endif
                     var mac = hmac.ComputeHash(counter.ToArray());
                     int take = Math.Min(mac.Length, len - offset);
                     for (int i = 0; i < take; i++)
@@ -843,7 +849,7 @@ namespace EncryptTools.Ui
         {
             if (string.IsNullOrEmpty(password)) throw new InvalidOperationException("missing password");
             var key = DeriveKey(password, options, 32);
-            int seed = BitConverter.ToInt32(SHA256.HashData(key), 0);
+            int seed = BitConverter.ToInt32(EncryptTools.Compat.Sha256Hash(key), 0);
             return ShuffleBlocks(bmp, options.BlockSize, seed, encrypt);
         }
 

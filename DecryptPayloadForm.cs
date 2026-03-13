@@ -50,7 +50,11 @@ namespace EncryptTools
             _cbMode.Items.AddRange(new object[] { "密码", "密码文件" });
             _cbMode.SelectedIndex = 0;
             rowMode.Controls.Add(_cbMode, 1, 0);
-            _txtValue = new TextBox { Dock = DockStyle.Left, Width = 100, PlaceholderText = "输入密码" };
+            _txtValue = new TextBox { Dock = DockStyle.Left, Width = 100
+#if !NET48
+                , PlaceholderText = "输入密码"
+#endif
+            };
             rowMode.Controls.Add(_txtValue, 2, 0);
             _btnBrowsePwd = new Button { Text = "选择密码文件", Dock = DockStyle.Fill, Visible = false };
             rowMode.Controls.Add(_btnBrowsePwd, 3, 0);
@@ -80,7 +84,9 @@ namespace EncryptTools
             _btnBrowsePwd.Visible = isPwdFile;
             _txtValue.ReadOnly = isPwdFile;
             _txtValue.UseSystemPasswordChar = !isPwdFile;
+#if !NET48
             _txtValue.PlaceholderText = isPwdFile ? "请选择密码文件(.pwd)" : "输入密码";
+#endif
             if (isPwdFile)
             {
                 // 切换到密码文件模式时，清空手动密码
@@ -172,7 +178,7 @@ namespace EncryptTools
                 _lblStatus.Text = "正在解密，请稍候…";
 
                 var tempEnc = Path.Combine(Path.GetTempPath(), "encryptTools_payload_" + Guid.NewGuid().ToString("N") + ".enc");
-                await File.WriteAllBytesAsync(tempEnc, encryptedBytes);
+                await Compat.FileWriteAllBytesAsync(tempEnc, encryptedBytes);
 
                 var outDir = Path.GetDirectoryName(_exePath) ?? Environment.CurrentDirectory;
                 var outTemp = Path.Combine(outDir, "decrypt_" + Guid.NewGuid().ToString("N") + ".tmp");
@@ -196,7 +202,7 @@ namespace EncryptTools
 
                 var desiredName = SanitizeFileName(result.OriginalFileName) ?? "output.bin";
                 var outPath = GetNonConflictingPath(Path.Combine(outDir, desiredName));
-                File.Move(outTemp, outPath, overwrite: true);
+                Compat.FileMoveOverwrite(outTemp, outPath);
 
                 _lblStatus.Text = "解密完成：" + outPath;
                 try

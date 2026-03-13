@@ -137,7 +137,7 @@ namespace EncryptTools.PasswordFile
                 }
                 foreach (var c in Path.GetInvalidFileNameChars())
                 {
-                    if (name.Contains(c))
+                    if (name.IndexOf(c) >= 0)
                     {
                         MessageBox.Show(this, "文件名包含非法字符。", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;

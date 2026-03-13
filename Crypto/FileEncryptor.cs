@@ -100,14 +100,7 @@ namespace EncryptTools
                 {
                     try
                     {
-                        if (File.Exists(outFile) && new FileInfo(outFile).Length > 0)
-                        {
-                            TryDeleteSourceFileWithForce(file);
-                        }
-                        else
-                        {
-                            _options.Log?.Invoke($"输出文件缺失或为空，已保留源文件: {file}");
-                        }
+                        TryDeleteSourceFileWithForce(file);
                     }
                     catch (Exception ex)
                     {

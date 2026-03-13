@@ -56,7 +56,7 @@ namespace EncryptTools.PasswordFile
             const string symbols = "!@#$%^&*()-_=+[]{};:,.<>?";
             var all = lower + upper + digits + symbols;
             var buf = new byte[length];
-            RandomNumberGenerator.Fill(buf);
+            EncryptTools.Compat.RngFill(buf);
             var sb = new StringBuilder(length);
             sb.Append(lower[buf[0] % lower.Length]);
             sb.Append(upper[buf[1] % upper.Length]);
@@ -74,7 +74,7 @@ namespace EncryptTools.PasswordFile
         {
             var raw = Environment.MachineName + "|" + Environment.UserName + "|encryptTools.pwd.salt";
             var bytes = Encoding.UTF8.GetBytes(raw);
-            var hash = SHA256.HashData(bytes);
+            var hash = EncryptTools.Compat.Sha256Hash(bytes);
             var s = Convert.ToBase64String(hash).TrimEnd('=').Replace('+', '-').Replace('/', '_');
             return s.Length >= 20 ? s : s + GenerateRandomPassword(20 - s.Length);
         }
@@ -85,8 +85,8 @@ namespace EncryptTools.PasswordFile
         public static string GenerateRandomFileName()
         {
             var buf = new byte[12];
-            RandomNumberGenerator.Fill(buf);
-            return Convert.ToHexString(buf).ToLowerInvariant() + ".pwd";
+            EncryptTools.Compat.RngFill(buf);
+            return EncryptTools.Compat.ToHexString(buf) + ".pwd";
         }
     }
 }

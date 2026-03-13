@@ -321,7 +321,15 @@ namespace EncryptTools
 
             var lblAlgo = new Label { Text = "算法:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
             var cbAlgo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 2), MinimumSize = new Size(120, 0) };
-            cbAlgo.Items.AddRange(new object[] { "AES-256-GCM", "AES-128-CBC", "ChaCha20-Poly1305", "SM4" });
+            // 当前为 .NET 8 可执行 GCM；本机已装 .NET 8 时也显示 GCM 选项，执行时再检查并提示
+            if (RuntimeHelper.IsNet8OrHigher || RuntimeHelper.IsNet8InstalledOnMachine)
+            {
+                cbAlgo.Items.AddRange(new object[] { "AES-256-GCM", "AES-128-CBC", "ChaCha20-Poly1305", "SM4" });
+            }
+            else
+            {
+                cbAlgo.Items.AddRange(new object[] { "AES-128-CBC", "ChaCha20-Poly1305", "SM4" });
+            }
             cbAlgo.SelectedIndex = 0;
             SetComboDropDownWidth(cbAlgo);
             var lblSuffix = new Label { Text = "后缀:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
@@ -509,14 +517,18 @@ namespace EncryptTools
 
             var leftPanel = new Panel { Dock = DockStyle.Fill };
             var txtIn = new TextBox { Multiline = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical };
+#if !NET48
             txtIn.PlaceholderText = "输入明文或密文";
+#endif
             var cbAutoDetect = new CheckBox { Text = "自动检测格式（Base64/Hex/JSON等）", Dock = DockStyle.Bottom, AutoSize = true };
             leftPanel.Controls.Add(txtIn);
             leftPanel.Controls.Add(cbAutoDetect);
 
             var rightPanel = new Panel { Dock = DockStyle.Fill };
             var txtOut = new TextBox { Multiline = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical, ReadOnly = true };
+#if !NET48
             txtOut.PlaceholderText = "输出结果";
+#endif
             var btnSave = new Button { Text = "保存为文件", Dock = DockStyle.Bottom, Height = 28 };
             btnSave.Click += (_, __) =>
             {
@@ -828,7 +840,10 @@ namespace EncryptTools
         private static CryptoAlgorithm MapAlgorithm(ComboBox? cb)
         {
             if (cb == null || cb.SelectedIndex < 0) return CryptoAlgorithm.AesCbc;
-            return cb.SelectedIndex == 0 ? CryptoAlgorithm.AesGcm : CryptoAlgorithm.AesCbc;
+            var text = cb.SelectedItem?.ToString() ?? "";
+            if (string.Equals(text, "AES-256-GCM", StringComparison.OrdinalIgnoreCase))
+                return CryptoAlgorithm.AesGcm;
+            return CryptoAlgorithm.AesCbc;
         }
 
         private static string GetEncryptedExtension(CryptoAlgorithm alg)
@@ -1000,6 +1015,12 @@ namespace EncryptTools
                 bool packExe = ctx.ChkPackExe?.Checked ?? false;
                 bool inPlace = ctx.ChkOverwrite?.Checked ?? false;
                 var algorithm = MapAlgorithm(ctx.CbAlgo);
+                if (algorithm == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher)
+                {
+                    MessageBox.Show(RuntimeHelper.GetAesGcmRequirementMessage(), "需要 .NET 8", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    _statusLeft.Text = "就绪";
+                    return;
+                }
 
                 _statusLeft.Text = "执行加密中…";
                 var log = new Action<string>(msg =>
@@ -1161,7 +1182,7 @@ namespace EncryptTools
                                 continue;
                             }
                             var tmpEnc = Path.Combine(Path.GetTempPath(), "encryptTools_exe_dec_" + Guid.NewGuid().ToString("N") + ".enc");
-                            await File.WriteAllBytesAsync(tmpEnc, encBytes);
+                            await Compat.FileWriteAllBytesAsync(tmpEnc, encBytes);
                             var tmpOut = Path.Combine(outDir, "decrypt_" + Guid.NewGuid().ToString("N") + ".tmp");
                             var crypto = new CryptoService();
                             CryptoService.DecryptResult result;
@@ -1173,7 +1194,7 @@ namespace EncryptTools
                             var desiredName = string.IsNullOrWhiteSpace(result.OriginalFileName) ? Path.GetFileNameWithoutExtension(source) + "_decrypted" : SanitizeFileNameLocal(result.OriginalFileName);
                             var outPath = Path.Combine(outDir, desiredName);
                             try { if (File.Exists(outPath)) File.Delete(outPath); } catch { }
-                            File.Move(tmpOut, outPath, overwrite: true);
+                            Compat.FileMoveOverwrite(tmpOut, outPath);
                             UpdateFileListItemPathStatus(ctx.FileListView, source, outPath, "正常");
                             if (inPlace) { try { File.Delete(source); } catch { } }
                         }
@@ -1216,6 +1237,12 @@ namespace EncryptTools
                 }
                 ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 解密完成。{Environment.NewLine}");
                 _statusLeft.Text = "解密完成。";
+            }
+            catch (NotSupportedException ex) when (ex.Message != null && (ex.Message.Contains("AES-GCM") || ex.Message.Contains("需要")))
+            {
+                MessageBox.Show(RuntimeHelper.GetAesGcmRequirementMessage(), "需要 .NET 8", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 解密失败: {ex.Message}{Environment.NewLine}");
+                _statusLeft.Text = "解密失败。";
             }
             catch (Exception ex)
             {

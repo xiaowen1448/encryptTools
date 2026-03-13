@@ -4,75 +4,65 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Buffers;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text;
 
 namespace EncryptTools
 {
+    /// <summary>密钥缓存项，避免静态初始化时依赖 ValueTuple 导致类型初始化异常。</summary>
+    internal sealed class KeyCacheEntry
+    {
+        public string? Password { get; set; }
+        public byte[]? Salt { get; set; }
+        public int Iterations { get; set; }
+        public int KeySize { get; set; }
+        public byte[]? Key { get; set; }
+    }
+
+    /// <summary>缓冲区池接口，便于在无法加载 ArrayPool 时使用简单实现。</summary>
+    internal interface IBufferPool
+    {
+        byte[] Rent(int minimumLength);
+        void Return(byte[] array);
+    }
+
+    internal sealed class ArrayPoolAdapter : IBufferPool
+    {
+        private readonly ArrayPool<byte> _pool;
+        public ArrayPoolAdapter(ArrayPool<byte> pool) { _pool = pool; }
+        public byte[] Rent(int minimumLength) => _pool.Rent(minimumLength);
+        public void Return(byte[] array) { _pool.Return(array); }
+    }
+
+    internal sealed class SimpleBufferPool : IBufferPool
+    {
+        public byte[] Rent(int minimumLength) => new byte[minimumLength];
+        public void Return(byte[] array) { }
+    }
+
     public class CryptoService
     {
         private const string Magic = "ENC1";
         private const int BufferSize = 4 * 1024 * 1024; // 4MB缓冲区
-        
-        // 缓存密钥派生结果，避免重复计算
-        private static readonly ThreadLocal<(string password, byte[] salt, int iterations, int keySize, byte[] key)> KeyCache = 
-            new ThreadLocal<(string, byte[], int, int, byte[])>();
 
-        // 缓冲区池，减少内存分配
-        private static readonly ArrayPool<byte> BufferPool = ArrayPool<byte>.Shared;
+        // 延迟初始化，避免类型初始化时加载 System.Buffers 或 ValueTuple 导致异常
+        private static readonly Lazy<ThreadLocal<KeyCacheEntry>> KeyCacheLazy =
+            new Lazy<ThreadLocal<KeyCacheEntry>>(() => new ThreadLocal<KeyCacheEntry>());
 
-        // 预分配的加密对象池，减少创建开销
-        private static readonly ConcurrentQueue<Aes> AesPool = new ConcurrentQueue<Aes>();
-        private static readonly ConcurrentQueue<TripleDES> TripleDesPool = new ConcurrentQueue<TripleDES>();
-
-        // 获取AES实例
-        private static Aes GetAes()
+        private static readonly Lazy<IBufferPool> BufferPoolLazy = new Lazy<IBufferPool>(() =>
         {
-            if (AesPool.TryDequeue(out var aes))
+            try
             {
-                return aes;
+                return new ArrayPoolAdapter(ArrayPool<byte>.Shared);
             }
-            return Aes.Create();
-        }
+            catch
+            {
+                return new SimpleBufferPool();
+            }
+        });
 
-        // 归还AES实例
-        private static void ReturnAes(Aes aes)
-        {
-            if (aes != null && AesPool.Count < 10) // 限制池大小
-            {
-                aes.Clear();
-                AesPool.Enqueue(aes);
-            }
-            else
-            {
-                aes?.Dispose();
-            }
-        }
-
-        // 获取TripleDES实例
-        private static TripleDES GetTripleDes()
-        {
-            if (TripleDesPool.TryDequeue(out var tdes))
-            {
-                return tdes;
-            }
-            return TripleDES.Create();
-        }
-
-        // 归还TripleDES实例
-        private static void ReturnTripleDes(TripleDES tdes)
-        {
-            if (tdes != null && TripleDesPool.Count < 10) // 限制池大小
-            {
-                tdes.Clear();
-                TripleDesPool.Enqueue(tdes);
-            }
-            else
-            {
-                tdes?.Dispose();
-            }
-        }
+        private static ThreadLocal<KeyCacheEntry> KeyCache => KeyCacheLazy.Value;
+        private static IBufferPool GetBufferPool() => BufferPoolLazy.Value;
 
         public async Task EncryptFileAsync(
             string inputPath,
@@ -113,8 +103,12 @@ namespace EncryptTools
                     await EncryptAesCbcAsync(inputPath, outFs, password, salt, iterations, aesKeySizeBits, progress, ct);
                     break;
                 case CryptoAlgorithm.AesGcm:
+#if NET48
+                    throw new NotSupportedException(RuntimeHelper.GetAesGcmRequirementMessage());
+#else
                     await EncryptAesGcmAsync(inputPath, outFs, password, salt, iterations, aesKeySizeBits, progress, ct);
                     break;
+#endif
                 case CryptoAlgorithm.TripleDes:
                     await EncryptTripleDesAsync(inputPath, outFs, password, salt, iterations, progress, ct);
                     break;
@@ -188,8 +182,12 @@ namespace EncryptTools
                     await DecryptAesCbcAsync(inFs, outFs, password, salt, iterations, aesKeySizeBits, progress, ct);
                     break;
                 case CryptoAlgorithm.AesGcm:
+#if NET48
+                    throw new NotSupportedException(RuntimeHelper.GetAesGcmRequirementMessage());
+#else
                     await DecryptAesGcmAsync(inFs, outFs, password, salt, iterations, aesKeySizeBits, progress, ct);
                     break;
+#endif
                 case CryptoAlgorithm.TripleDes:
                     await DecryptTripleDesAsync(inFs, outFs, password, salt, iterations, progress, ct);
                     break;
@@ -205,28 +203,48 @@ namespace EncryptTools
         private static byte[] RandomBytes(int len)
         {
             var data = new byte[len];
-            RandomNumberGenerator.Fill(data);
+            Compat.RngFill(data);
             return data;
         }
 
         private static byte[] DeriveKey(string password, byte[] salt, int iterations, int keySize)
         {
-            // 检查缓存
             var cache = KeyCache.Value;
-            if (cache.password == password && 
-                ArraysEqual(cache.salt, salt) && 
-                cache.iterations == iterations && 
-                cache.keySize == keySize)
+            if (cache != null && cache.Password == password &&
+                cache.Salt != null && ArraysEqual(cache.Salt, salt) &&
+                cache.Iterations == iterations &&
+                cache.KeySize == keySize &&
+                cache.Key != null)
             {
-                return cache.key;
+                return cache.Key;
             }
 
-            // 计算新密钥
-            using var kdf = new Rfc2898DeriveBytes(password, salt, iterations, HashAlgorithmName.SHA256);
-            var key = kdf.GetBytes(keySize);
-            
-            // 更新缓存
-            KeyCache.Value = (password, salt, iterations, keySize, key);
+            // 计算新密钥（.NET 4.7.2+ 支持 HashAlgorithmName；更早版本用兼容方式）
+            byte[] key;
+#if NET48
+            try
+            {
+                using (var kdf = new Rfc2898DeriveBytes(password, salt, iterations, HashAlgorithmName.SHA256))
+                    key = kdf.GetBytes(keySize);
+            }
+            catch (MissingMethodException)
+            {
+                using (var kdf = new Rfc2898DeriveBytes(password, salt, iterations))
+                    key = kdf.GetBytes(keySize);
+            }
+#else
+            using (var kdf = new Rfc2898DeriveBytes(password, salt, iterations, HashAlgorithmName.SHA256))
+                key = kdf.GetBytes(keySize);
+#endif
+
+            KeyCache.Value = new KeyCacheEntry
+            {
+                Password = password,
+                Salt = salt,
+                Iterations = iterations,
+                KeySize = keySize,
+                Key = key
+            };
             return key;
         }
 
@@ -249,21 +267,15 @@ namespace EncryptTools
             bw.Write(iv);
 
             var key = DeriveKey(password, salt, iterations, keySizeBits / 8);
-            var aes = GetAes(); // 使用对象池
-            try
+            using (var aes = Aes.Create())
             {
                 aes.Key = key;
                 aes.IV = iv;
                 aes.Mode = CipherMode.CBC;
                 aes.Padding = PaddingMode.PKCS7;
-
                 using var crypto = new CryptoStream(outFs, aes.CreateEncryptor(), CryptoStreamMode.Write, leaveOpen: true);
                 await CopyWithProgressAsync(inputPath, crypto, progress, ct);
                 await crypto.FlushAsync(ct);
-            }
-            finally
-            {
-                ReturnAes(aes); // 归还到对象池
             }
         }
 
@@ -273,8 +285,7 @@ namespace EncryptTools
             var ivLen = br.ReadInt32();
             var iv = br.ReadBytes(ivLen);
             var key = DeriveKey(password, salt, iterations, keySizeBits / 8);
-            var aes = GetAes(); // 使用对象池
-            try
+            using (var aes = Aes.Create())
             {
                 aes.Key = key;
                 aes.IV = iv;
@@ -282,10 +293,6 @@ namespace EncryptTools
                 aes.Padding = PaddingMode.PKCS7;
                 using var crypto = new CryptoStream(inFs, aes.CreateDecryptor(), CryptoStreamMode.Read, leaveOpen: true);
                 await crypto.CopyToAsync(outFs, BufferSize, ct);
-            }
-            finally
-            {
-                ReturnAes(aes); // 归还到对象池
             }
         }
 
@@ -297,8 +304,7 @@ namespace EncryptTools
             bw.Write(iv);
 
             var key = DeriveKey(password, salt, iterations, 24);
-            var tdes = GetTripleDes(); // 使用对象池
-            try
+            using (var tdes = TripleDES.Create())
             {
                 tdes.Key = key;
                 tdes.IV = iv;
@@ -308,10 +314,6 @@ namespace EncryptTools
                 await CopyWithProgressAsync(inputPath, crypto, progress, ct);
                 await crypto.FlushAsync(ct);
             }
-            finally
-            {
-                ReturnTripleDes(tdes); // 归还到对象池
-            }
         }
 
         private async Task DecryptTripleDesAsync(FileStream inFs, FileStream outFs, string password, byte[] salt, int iterations, IProgress<long>? progress, CancellationToken ct)
@@ -320,8 +322,7 @@ namespace EncryptTools
             var ivLen = br.ReadInt32();
             var iv = br.ReadBytes(ivLen);
             var key = DeriveKey(password, salt, iterations, 24);
-            var tdes = GetTripleDes(); // 使用对象池
-            try
+            using (var tdes = TripleDES.Create())
             {
                 tdes.Key = key;
                 tdes.IV = iv;
@@ -330,12 +331,9 @@ namespace EncryptTools
                 using var crypto = new CryptoStream(inFs, tdes.CreateDecryptor(), CryptoStreamMode.Read, leaveOpen: true);
                 await crypto.CopyToAsync(outFs, BufferSize, ct);
             }
-            finally
-            {
-                ReturnTripleDes(tdes); // 归还到对象池
-            }
         }
 
+#if !NET48
         private async Task EncryptAesGcmAsync(string inputPath, FileStream outFs, string password, byte[] salt, int iterations, int keySizeBits, IProgress<long>? progress, CancellationToken ct)
         {
             var key = DeriveKey(password, salt, iterations, keySizeBits / 8);
@@ -348,8 +346,9 @@ namespace EncryptTools
             
             var fileSize = inputFs.Length;
             var totalBytesRead = 0L;
-            var buffer = BufferPool.Rent(BufferSize);
-            var cipherBuffer = BufferPool.Rent(BufferSize + 16); // +16 for authentication tag
+            var pool = GetBufferPool();
+            var buffer = pool.Rent(BufferSize);
+            var cipherBuffer = pool.Rent(BufferSize + 16); // +16 for authentication tag
             
             try
             {
@@ -372,8 +371,8 @@ namespace EncryptTools
             }
             finally
             {
-                BufferPool.Return(buffer);
-                BufferPool.Return(cipherBuffer);
+                pool.Return(buffer);
+                pool.Return(cipherBuffer);
             }
         }
 
@@ -387,8 +386,9 @@ namespace EncryptTools
             
             var fileSize = inFs.Length - nonce.Length;
             var totalBytesRead = 0L;
-            var buffer = BufferPool.Rent(BufferSize + 16); // +16 for authentication tag
-            var plainBuffer = BufferPool.Rent(BufferSize);
+            var pool = GetBufferPool();
+            var buffer = pool.Rent(BufferSize + 16); // +16 for authentication tag
+            var plainBuffer = pool.Rent(BufferSize);
             
             try
             {
@@ -415,10 +415,11 @@ namespace EncryptTools
             }
             finally
             {
-                BufferPool.Return(buffer);
-                BufferPool.Return(plainBuffer);
+                pool.Return(buffer);
+                pool.Return(plainBuffer);
             }
         }
+#endif
 
 
 
@@ -452,7 +453,8 @@ namespace EncryptTools
                 await semaphore.WaitAsync(ct);
                 
                 var currentChunkSize = (int)Math.Min(chunkSize, fileSize - totalBytesProcessed);
-                var buffer = BufferPool.Rent(currentChunkSize);
+                var chunkPool = GetBufferPool();
+                var buffer = chunkPool.Rent(currentChunkSize);
                 
                 var task = Task.Run(async () =>
                 {
@@ -467,7 +469,7 @@ namespace EncryptTools
                     }
                     finally
                     {
-                        BufferPool.Return(buffer);
+                        chunkPool.Return(buffer);
                         semaphore.Release();
                     }
                 }, ct);
@@ -523,8 +525,8 @@ namespace EncryptTools
                 }
             }
             
-            // 使用ArrayPool减少内存分配
-            var buffer = BufferPool.Rent(BufferSize);
+            var pool = GetBufferPool();
+            var buffer = pool.Rent(BufferSize);
             try
             {
                 int bytesRead;
@@ -536,7 +538,7 @@ namespace EncryptTools
             }
             finally
             {
-                BufferPool.Return(buffer);
+                pool.Return(buffer);
                 try { inFs?.Dispose(); } catch { }
                 if (!string.IsNullOrEmpty(tempCopy))
                 {
@@ -554,7 +556,8 @@ namespace EncryptTools
                 string tempDir = Path.Combine(Path.GetTempPath(), "encryptTools_temp");
                 Directory.CreateDirectory(tempDir);
                 string tempFile = Path.Combine(tempDir, "src_" + Guid.NewGuid().ToString("N") + src.Extension);
-                File.Copy(inputPath, tempFile, overwrite: true);
+                if (File.Exists(tempFile)) File.Delete(tempFile);
+                File.Copy(inputPath, tempFile);
                 return tempFile;
             }
             catch
@@ -573,8 +576,8 @@ namespace EncryptTools
             var fileOptions = FileOptions.SequentialScan;
             using var inFs = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, fileOptions);
             
-            // 使用ArrayPool减少内存分配
-            var buffer = BufferPool.Rent(BufferSize);
+            var pool = GetBufferPool();
+            var buffer = pool.Rent(BufferSize);
             try
             {
                 long total = 0;
@@ -594,17 +597,16 @@ namespace EncryptTools
             }
             finally
             {
-                BufferPool.Return(buffer);
+                pool.Return(buffer);
             }
         }
 
-        // 优化XOR解密方法，使用ArrayPool
+        // 优化XOR解密方法
         private async Task DecryptXorAsync(FileStream inFs, FileStream outFs, string password, byte[] salt, int iterations, IProgress<long>? progress, CancellationToken ct)
         {
             var key = DeriveKey(password, salt, iterations, 32);
-            
-            // 使用ArrayPool减少内存分配
-            var buffer = BufferPool.Rent(BufferSize);
+            var pool = GetBufferPool();
+            var buffer = pool.Rent(BufferSize);
             try
             {
                 int keyIndex = 0;
@@ -622,7 +624,7 @@ namespace EncryptTools
             }
             finally
             {
-                BufferPool.Return(buffer);
+                pool.Return(buffer);
             }
         }
     }
