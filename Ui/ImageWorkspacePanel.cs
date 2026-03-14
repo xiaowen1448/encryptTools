@@ -26,8 +26,12 @@ namespace EncryptTools.Ui
         private ComboBox _cbBlock = null!;
         private ComboBox _cbPwdFiles = null!;
         private string? _passwordFilePath;
-        private NumericUpDown _numIterations = null!;
-        private NumericUpDown _numArnoldIterations = null!;
+        private CheckBox _chkPixelation = null!;
+        private CheckBox _chkIconOverlay = null!;
+        private ComboBox _cbIcons = null!;
+        private NumericUpDown _numOverlayOpacity = null!;
+        private NumericUpDown _numIconScale = null!;
+        private List<string> _customIconPaths = new List<string>();
         private bool _lastActionWasDecrypt;
 
         public ImageWorkspacePanel(Action<string> log, Action<double>? reportProgress = null)
@@ -64,12 +68,13 @@ namespace EncryptTools.Ui
             var btnSelect = new Button { Text = "选择图片", AutoSize = true, Margin = new Padding(0, 0, 8, 4) };
             var lblHint = new Label { Text = "支持拖拽", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 6, 16, 0) };
             _cbMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(100, 0) };
-            _cbMode.Items.AddRange(new object[] { "不可逆马赛克(仅效果)", "密钥置乱(可逆)", "像素XOR(可逆)", "分块置乱(可逆)", "Arnold猫映射(可逆)" });
+            _cbMode.Items.AddRange(new object[] { "不可逆马赛克(仅效果)", "密钥置乱(可逆)", "像素XOR(可逆)", "分块置乱(可逆)" });
             _cbMode.SelectedIndex = 1;
             _cbMode.DropDown += (_, __) => SetComboDropDownWidth(_cbMode);
             SetComboDropDownWidth(_cbMode);
-            _cbBlock = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(50, 0) };
-            _cbBlock.Items.AddRange(new object[] { "4x4", "8x8", "16x16", "32x32" });
+            _chkPixelation = new CheckBox { Text = "像素化", AutoSize = true, Margin = new Padding(4, 6, 8, 0), Checked = false };
+            _cbBlock = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(56, 0) };
+            _cbBlock.Items.AddRange(new object[] { "4×4", "8×8", "16×16", "24×24", "32×32", "48×48", "64×64" });
             _cbBlock.SelectedIndex = 2;
             _cbBlock.DropDown += (_, __) => SetComboDropDownWidth(_cbBlock);
             SetComboDropDownWidth(_cbBlock);
@@ -79,21 +84,29 @@ namespace EncryptTools.Ui
 
             _cbPwdFiles = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(120, 0) };
             _cbPwdFiles.DropDown += (_, __) => SetComboDropDownWidth(_cbPwdFiles);
-            _numIterations = new NumericUpDown { Minimum = 10_000, Maximum = 1_000_000, Increment = 10_000, Value = 200_000, Width = 90, Margin = new Padding(4, 4, 8, 4) };
-            _numArnoldIterations = new NumericUpDown { Minimum = 1, Maximum = 200, Increment = 1, Value = 10, Width = 60, Margin = new Padding(4, 4, 8, 4) };
+            _chkIconOverlay = new CheckBox { Text = "图标覆盖", AutoSize = true, Margin = new Padding(4, 6, 4, 0), Checked = true };
+            _cbIcons = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(120, 0) };
+            _cbIcons.DropDown += (_, __) => SetComboDropDownWidth(_cbIcons);
+            _numOverlayOpacity = new NumericUpDown { Minimum = 1, Maximum = 100, Value = 80, Width = 44, Margin = new Padding(2, 4, 4, 4) };
+            _numIconScale = new NumericUpDown { Minimum = 10, Maximum = 200, Value = 80, Width = 44, Margin = new Padding(2, 4, 8, 4) };
 
             toolbar.Controls.Add(btnSelect);
             toolbar.Controls.Add(lblHint);
-            toolbar.Controls.Add(new Label { Text = "像素化:", AutoSize = true, Margin = new Padding(8, 8, 4, 0) });
+            toolbar.Controls.Add(_chkPixelation);
             toolbar.Controls.Add(_cbMode);
             toolbar.Controls.Add(new Label { Text = "密码文件:", AutoSize = true, Margin = new Padding(8, 8, 4, 0) });
             toolbar.Controls.Add(_cbPwdFiles);
             toolbar.Controls.Add(new Label { Text = "块:", AutoSize = true, Margin = new Padding(4, 8, 4, 0) });
             toolbar.Controls.Add(_cbBlock);
-            toolbar.Controls.Add(new Label { Text = "迭代:", AutoSize = true, Margin = new Padding(4, 8, 4, 0) });
-            toolbar.Controls.Add(_numIterations);
-            toolbar.Controls.Add(new Label { Text = "Arnold:", AutoSize = true, Margin = new Padding(4, 8, 4, 0) });
-            toolbar.Controls.Add(_numArnoldIterations);
+            var btnImportIcons = new Button { Text = "导入图标", AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
+            toolbar.Controls.Add(btnImportIcons);
+            toolbar.Controls.Add(_chkIconOverlay);
+            toolbar.Controls.Add(new Label { Text = "图标:", AutoSize = true, Margin = new Padding(4, 8, 2, 0) });
+            toolbar.Controls.Add(_cbIcons);
+            toolbar.Controls.Add(new Label { Text = "透明度%:", AutoSize = true, Margin = new Padding(4, 8, 2, 0) });
+            toolbar.Controls.Add(_numOverlayOpacity);
+            toolbar.Controls.Add(new Label { Text = "图标缩放%:", AutoSize = true, Margin = new Padding(4, 8, 2, 0) });
+            toolbar.Controls.Add(_numIconScale);
             toolbar.Controls.Add(btnEncrypt);
             toolbar.Controls.Add(btnDecrypt);
             toolbar.Controls.Add(btnSave);
@@ -170,7 +183,53 @@ namespace EncryptTools.Ui
             btnDecrypt.Click += async (_, __) => await RunDecryptAsync();
             btnSave.Click += (_, __) => SaveBatchOutput();
 
+            btnImportIcons.Click += (_, __) =>
+            {
+                using var dlg = new OpenFileDialog
+                {
+                    Filter = "图片|*.png;*.jpg;*.jpeg;*.bmp;*.ico|所有文件|*.*",
+                    Multiselect = true
+                };
+                if (dlg.ShowDialog(FindForm()) == DialogResult.OK && dlg.FileNames.Length > 0)
+                {
+                    int copied = 0;
+                    foreach (var f in dlg.FileNames)
+                    {
+                        try
+                        {
+                            var dst = Path.Combine(GetIcoDirectory(), Path.GetFileName(f));
+                            Directory.CreateDirectory(GetIcoDirectory());
+                            File.Copy(f, dst, overwrite: true);
+                            copied++;
+                        }
+                        catch { }
+                    }
+                    RefreshIconsCombo();
+                    _log($"[{DateTime.Now:HH:mm:ss}] 已导入 {copied} 个图标到 ico 目录。");
+                }
+            };
+
+            _cbIcons.SelectedIndexChanged += (_, __) =>
+            {
+                if (_cbIcons.SelectedItem is string name && !string.IsNullOrWhiteSpace(name) && name != "(未选择)")
+                {
+                    var full = Path.Combine(GetIcoDirectory(), name);
+                    _customIconPaths = File.Exists(full) ? new List<string> { full } : new List<string>();
+                }
+                else
+                {
+                    _customIconPaths = new List<string>();
+                }
+            };
+
             _cbMode.SelectedIndexChanged += (_, __) => UpdateModeUiState(btnDecrypt);
+            _chkPixelation.CheckedChanged += (_, __) =>
+            {
+                _cbMode.Enabled = _chkPixelation.Checked;
+                _cbBlock.Enabled = _chkPixelation.Checked;
+                UpdateModeUiState(btnDecrypt);
+            };
+            _chkIconOverlay.CheckedChanged += (_, __) => UpdateModeUiState(btnDecrypt);
             UpdateModeUiState(btnDecrypt);
 
             _cbPwdFiles.DropDown += (_, __) => RefreshPasswordFiles();
@@ -183,6 +242,7 @@ namespace EncryptTools.Ui
                 }
             };
             RefreshPasswordFiles();
+            RefreshIconsCombo();
 
             // 图片 Tab 右键菜单：关闭此文件 / 关闭其他文件
             var imageTabMenu = new ContextMenuStrip();
@@ -235,15 +295,19 @@ namespace EncryptTools.Ui
         private async Task RunEncryptAsync()
         {
             if (_sheetTabs.TabPages.Count == 0) return;
+            if (string.IsNullOrWhiteSpace(_passwordFilePath) || !File.Exists(_passwordFilePath))
+            {
+                _log($"[{DateTime.Now:HH:mm:ss}] 请先选择密码文件(.pwd)后再加密。");
+                return;
+            }
+            var password = TryLoadPasswordFromPwdFile();
+            if (string.IsNullOrEmpty(password)) return;
             _lastActionWasDecrypt = false;
             _reportProgress?.Invoke(0);
             var progress = new Progress<int>(p => { _reportProgress?.Invoke(p / 100.0); });
             try
             {
-                var password = TryLoadPasswordFromPwdFile();
                 var modeNow = (ImageMode)Math.Max(0, _cbMode.SelectedIndex);
-                if (modeNow != ImageMode.Mosaic && string.IsNullOrEmpty(password))
-                    return;
 
                 int total = _sheetTabs.TabPages.Count;
                 for (int i = 0; i < total; i++)
@@ -255,16 +319,36 @@ namespace EncryptTools.Ui
                     if (rightBox == null) continue;
                     var options = BuildOptionsFromUi();
                     Bitmap? processed = null;
+                    Bitmap? coreEncrypted = null;
                     await Task.Run(() =>
                     {
                         using var orig = Image.FromFile(path);
                         processed = ApplyPixelEffect(orig, options, password, encrypt: true);
                         ((IProgress<int>)progress).Report((i + 1) * 100 / total);
                     }).ConfigureAwait(true);
+                    if (processed != null)
+                    {
+                        if (options.IconOverlayEnabled && _chkIconOverlay.Checked)
+                        {
+                            ApplyIconOverlay(processed, options, new List<string>(_customIconPaths), out var blockData, out var overlayBlockSize);
+                            if (blockData != null && blockData.Length > 0 && !string.IsNullOrEmpty(password))
+                            {
+                                var encrypted = EncryptBlockData(password, options.SaltBase64 ?? "", blockData);
+                                if (encrypted != null)
+                                {
+                                    options.IconOverlayBlocksEncryptedBase64 = Convert.ToBase64String(encrypted);
+                                    options.IconOverlayBlockSize = overlayBlockSize;
+                                }
+                            }
+                        }
+                        // 保存带遮挡的图，解密时用密码恢复块再反向解密
+                        coreEncrypted = null;
+                    }
                     if (processed != null && !rightBox.IsDisposed)
                     {
                         rightBox.Image?.Dispose();
                         rightBox.Image = processed;
+                        rightBox.Tag = new ZoomState { BaseSize = processed.Size, Zoom = 1f };
                         rightBox.Size = FitThumbnailSize(processed.Size, 480, 360);
                         tab.Tag = new ImageSheetState { Path = path, EncryptedImage = (Bitmap)processed.Clone(), Options = options };
                         _log($"[{DateTime.Now:HH:mm:ss}] 加密完成: {Path.GetFileName(path)}");
@@ -278,12 +362,54 @@ namespace EncryptTools.Ui
             }
         }
 
+        private static string GetIcoDirectory()
+        {
+            try
+            {
+                return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ico");
+            }
+            catch
+            {
+                return Path.Combine(Environment.CurrentDirectory, "ico");
+            }
+        }
+
+        private void RefreshIconsCombo()
+        {
+            try
+            {
+                var dir = GetIcoDirectory();
+                Directory.CreateDirectory(dir);
+                var files = Directory.GetFiles(dir, "*.*", SearchOption.TopDirectoryOnly)
+                    .Where(f => new[] { ".png", ".jpg", ".jpeg", ".bmp", ".ico" }.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
+                    .Select(Path.GetFileName)
+                    .Where(n => !string.IsNullOrWhiteSpace(n))
+                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                _cbIcons.BeginUpdate();
+                _cbIcons.Items.Clear();
+                _cbIcons.Items.Add("(未选择)");
+                foreach (var n in files) _cbIcons.Items.Add(n!);
+                _cbIcons.EndUpdate();
+
+                if (_cbIcons.SelectedIndex < 0) _cbIcons.SelectedIndex = 0;
+                SetComboDropDownWidth(_cbIcons);
+            }
+            catch { }
+        }
+
         private async Task RunDecryptAsync()
         {
             if (_sheetTabs.TabPages.Count == 0) return;
-            _lastActionWasDecrypt = true;
+            if (string.IsNullOrWhiteSpace(_passwordFilePath) || !File.Exists(_passwordFilePath))
+            {
+                _log($"[{DateTime.Now:HH:mm:ss}] 请先选择密码文件(.pwd)后再解密。");
+                return;
+            }
             var password = TryLoadPasswordFromPwdFile();
             if (string.IsNullOrEmpty(password)) return;
+            _lastActionWasDecrypt = true;
 
             // 当前所选密码文件名（仅文件名部分），用于与元数据中的 PasswordFileName 比较
             string? currentPwdFileName = null;
@@ -331,15 +457,34 @@ namespace EncryptTools.Ui
 
                 try
                 {
+                    Bitmap? toDecrypt = state.EncryptedImage;
+                    if (toDecrypt != null && state.Options != null &&
+                        !string.IsNullOrEmpty(state.Options.IconOverlayBlocksEncryptedBase64) &&
+                        state.Options.IconOverlayBlockSize >= 4)
+                    {
+                        var enc = Convert.FromBase64String(state.Options.IconOverlayBlocksEncryptedBase64);
+                        var blockData = DecryptBlockData(password, state.Options.SaltBase64 ?? "", enc);
+                        if (blockData != null && blockData.Length > 0)
+                        {
+                            var restored = (Bitmap)state.EncryptedImage.Clone();
+                            if (RestoreIconOverlayBlocks(restored, blockData, state.Options.IconOverlayBlockSize))
+                                toDecrypt = restored;
+                            else
+                                restored?.Dispose();
+                        }
+                    }
                     Bitmap? decrypted = null;
                     await Task.Run(() =>
                     {
-                        decrypted = ApplyPixelEffect(state.EncryptedImage, state.Options, password, encrypt: false);
+                        decrypted = ApplyPixelEffect(toDecrypt!, state.Options!, password, encrypt: false);
+                        if (toDecrypt != null && toDecrypt != state.EncryptedImage)
+                            toDecrypt.Dispose();
                     }).ConfigureAwait(true);
                     if (decrypted != null && !rightBox.IsDisposed)
                     {
                         rightBox.Image?.Dispose();
                         rightBox.Image = decrypted;
+                        rightBox.Tag = new ZoomState { BaseSize = decrypted.Size, Zoom = 1f };
                         rightBox.Size = FitThumbnailSize(decrypted.Size, 480, 360);
                         _log($"[{DateTime.Now:HH:mm:ss}] 解密完成: {Path.GetFileName(state.Path)}");
                     }
@@ -384,6 +529,13 @@ namespace EncryptTools.Ui
             public override string ToString() => DisplayName;
         }
 
+        /// <summary>预览区缩放状态：1:1 时恢复为图片原始像素尺寸。</summary>
+        private sealed class ZoomState
+        {
+            public Size BaseSize;
+            public float Zoom = 1f;
+        }
+
         private enum ImageMode
         {
             Mosaic = 0,
@@ -399,10 +551,18 @@ namespace EncryptTools.Ui
             public ImageMode Mode { get; set; }
             public int BlockSize { get; set; } = 16;
             public int Iterations { get; set; } = 200_000;
-            public int ArnoldIterations { get; set; } = 10;
             public string SaltBase64 { get; set; } = "";
             /// <summary>加密时使用的密码文件名（例如 xxxx.pwd），用于解密时校验是否选对密码文件。</summary>
             public string? PasswordFileName { get; set; }
+            public bool PixelationEnabled { get; set; }
+            public bool IconOverlayEnabled { get; set; }
+            public int OverlayOpacityPercent { get; set; } = 80;
+            /// <summary>覆盖图标相对块大小的缩放比例（10～200），100 表示与块同大。</summary>
+            public int IconScalePercent { get; set; } = 80;
+            /// <summary>图标遮挡块的原始像素（用密码加密后 Base64），解密时用密码恢复再还原原图。</summary>
+            public string? IconOverlayBlocksEncryptedBase64 { get; set; }
+            /// <summary>遮挡使用的块尺寸，与 IconOverlayBlocksEncryptedBase64 配套。</summary>
+            public int IconOverlayBlockSize { get; set; }
         }
 
         private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".gif" };
@@ -473,9 +633,10 @@ namespace EncryptTools.Ui
             try
             {
                 leftBox.Image = Image.FromFile(imagePath);
+                if (leftBox.Image != null)
+                    leftBox.Tag = new ZoomState { BaseSize = leftBox.Image.Size, Zoom = 1f };
             }
             catch { }
-            rightBox.Tag = imagePath;
 
             split.Panel1.Controls.Add(leftPanel);
             split.Panel2.Controls.Add(rightPanel);
@@ -525,6 +686,7 @@ namespace EncryptTools.Ui
             {
                 rightBox.Image?.Dispose();
                 rightBox.Image = processed;
+                rightBox.Tag = new ZoomState { BaseSize = processed.Size, Zoom = 1f };
                 rightBox.Size = FitThumbnailSize(processed.Size, 480, 360);
                 tab.Tag = new ImageSheetState { Path = imagePath, EncryptedImage = (Bitmap)processed.Clone(), Options = options };
             }
@@ -543,45 +705,48 @@ namespace EncryptTools.Ui
             outer.Controls.Add(scroll);
             outer.Controls.Add(toolBar);
 
-            var baseSize = Size.Empty; // “刚打开时的比例大小”
-            float zoom = 1f;
+            ZoomState GetState()
+            {
+                var s = pb.Tag as ZoomState;
+                if (s != null) return s;
+                s = new ZoomState { BaseSize = pb.Image?.Size ?? Size.Empty, Zoom = 1f };
+                pb.Tag = s;
+                return s;
+            }
             void ApplyZoom()
             {
                 if (pb.Image == null) return;
-                if (baseSize.Width <= 0 || baseSize.Height <= 0)
-                    baseSize = pb.Size;
-                int w = (int)(baseSize.Width * zoom);
-                int h = (int)(baseSize.Height * zoom);
+                var st = GetState();
+                if (st.BaseSize.Width <= 0 || st.BaseSize.Height <= 0)
+                    st.BaseSize = pb.Image.Size;
+                int w = (int)(st.BaseSize.Width * st.Zoom);
+                int h = (int)(st.BaseSize.Height * st.Zoom);
                 pb.Size = new Size(Math.Max(1, w), Math.Max(1, h));
             }
+            // 1:1 = 恢复为刚打开时的比例（图片原始像素尺寸）
             btnZoom100.Click += (_, __) =>
             {
-                zoom = 1f;
-                if (baseSize.Width <= 0 || baseSize.Height <= 0)
-                    baseSize = pb.Size;
-                if (baseSize.Width > 0 && baseSize.Height > 0)
-                    pb.Size = baseSize;
+                if (pb.Image == null) return;
+                var st = GetState();
+                st.BaseSize = pb.Image.Size;
+                st.Zoom = 1f;
+                pb.Size = st.BaseSize;
             };
 
             scroll.MouseWheel += (_, e) =>
             {
                 if ((Control.ModifierKeys & Keys.Control) == 0) return;
                 if (pb.Image == null) return;
-                if (baseSize.Width <= 0 || baseSize.Height <= 0)
-                    baseSize = pb.Size;
-                zoom = e.Delta > 0 ? zoom * 1.1f : zoom / 1.1f;
-                zoom = Math.Max(0.05f, Math.Min(20f, zoom));
+                var st = GetState();
+                if (st.BaseSize.Width <= 0 || st.BaseSize.Height <= 0)
+                    st.BaseSize = pb.Image.Size;
+                st.Zoom = e.Delta > 0 ? st.Zoom * 1.1f : st.Zoom / 1.1f;
+                st.Zoom = Math.Max(0.05f, Math.Min(20f, st.Zoom));
                 ApplyZoom();
             };
             scroll.MouseEnter += (_, __) => scroll.Focus();
             scroll.TabStop = true;
 
-            pb.SizeChanged += (_, __) =>
-            {
-                // 外部首次设置“适配大小”时，把它当成 baseSize
-                if (baseSize.Width <= 0 || baseSize.Height <= 0)
-                    baseSize = pb.Size;
-            };
             picBox = pb;
             return outer;
         }
@@ -597,11 +762,11 @@ namespace EncryptTools.Ui
         private void UpdateModeUiState(Button btnDecrypt)
         {
             var mode = (ImageMode)Math.Max(0, _cbMode.SelectedIndex);
+            _cbMode.Enabled = _chkPixelation.Checked;
+            _cbBlock.Enabled = _chkPixelation.Checked;
             bool needsPassword = mode is ImageMode.Permutation or ImageMode.XorStream or ImageMode.BlockShuffle or ImageMode.ArnoldCat;
-            _cbPwdFiles.Enabled = needsPassword;
-            _numIterations.Enabled = needsPassword;
-            _numArnoldIterations.Enabled = mode == ImageMode.ArnoldCat;
-            btnDecrypt.Enabled = mode != ImageMode.Mosaic;
+            _cbPwdFiles.Enabled = true;
+            btnDecrypt.Enabled = _chkIconOverlay.Checked || (_chkPixelation.Checked && mode != ImageMode.Mosaic);
         }
 
         private void RefreshPasswordFiles()
@@ -688,16 +853,19 @@ namespace EncryptTools.Ui
 
         private ImageEffectOptions BuildOptionsFromUi()
         {
-            int block = _cbBlock.SelectedIndex switch { 0 => 4, 1 => 8, 2 => 16, _ => 32 };
+            int block = _cbBlock.SelectedIndex switch { 0 => 4, 1 => 8, 2 => 16, 3 => 24, 4 => 32, 5 => 48, _ => 64 };
             var salt = new byte[16];
             EncryptTools.Compat.RngFill(salt);
             var opt = new ImageEffectOptions
             {
                 Mode = (ImageMode)Math.Max(0, _cbMode.SelectedIndex),
                 BlockSize = block,
-                Iterations = (int)_numIterations.Value,
-                ArnoldIterations = (int)_numArnoldIterations.Value,
-                SaltBase64 = Convert.ToBase64String(salt)
+                Iterations = 200_000,
+                SaltBase64 = Convert.ToBase64String(salt),
+                PixelationEnabled = _chkPixelation.Checked,
+                IconOverlayEnabled = _chkIconOverlay.Checked,
+                OverlayOpacityPercent = (int)_numOverlayOpacity.Value,
+                IconScalePercent = (int)_numIconScale.Value
             };
             // 记录当前所选密码文件名（仅文件名），用于解密时校验是否选对密码文件。旧元数据无此字段则不强制。
             try
@@ -709,9 +877,190 @@ namespace EncryptTools.Ui
             return opt;
         }
 
+        /// <summary>
+        /// 块状图标覆盖：按块读取原像素并保存，再在每块上绘制图标，便于解密时用密码恢复原图。
+        /// 在 UI 线程调用。originalBlocks 为遮挡前块内像素（ARGB 顺序），由调用方用密码加密后写入元数据。
+        /// </summary>
+        private void ApplyIconOverlay(Bitmap bmp, ImageEffectOptions options, List<string> iconPaths, out byte[]? originalBlocks, out int overlayBlockSize)
+        {
+            originalBlocks = null;
+            overlayBlockSize = 0;
+            if (bmp == null || bmp.Width <= 0 || bmp.Height <= 0 || !options.IconOverlayEnabled) return;
+            var icons = new List<Bitmap>();
+            foreach (var p in iconPaths ?? _customIconPaths)
+            {
+                if (string.IsNullOrEmpty(p) || !File.Exists(p)) continue;
+                try
+                {
+                    var img = Image.FromFile(p) as Bitmap;
+                    if (img != null) icons.Add(img);
+                }
+                catch { }
+            }
+            if (icons.Count == 0) return;
+
+            Bitmap? work = null;
+            if (bmp.PixelFormat != PixelFormat.Format32bppArgb)
+            {
+                work = new Bitmap(bmp.Width, bmp.Height, PixelFormat.Format32bppArgb);
+                using (var g = Graphics.FromImage(work)) g.DrawImage(bmp, 0, 0);
+            }
+            var target = work ?? bmp;
+            int w = target.Width, h = target.Height;
+            // 按图片尺寸与图标缩放自动算块大小，实现全覆盖、无未遮挡区域
+            float scale = Math.Max(0.1f, Math.Min(2f, options.IconScalePercent / 100f));
+            int desiredBlocks = (int)(200 + (1f - scale) * 300);
+            desiredBlocks = Math.Max(80, Math.Min(500, desiredBlocks));
+            int block = (int)Math.Sqrt((double)w * h / desiredBlocks);
+            block = ((block + 3) / 4) * 4;
+            block = Math.Max(4, Math.Min(Math.Min(options.BlockSize, Math.Min(w, h)), Math.Max(block, 4)));
+            int bx = (w + block - 1) / block;
+            int by = (h + block - 1) / block;
+            int totalBlocks = bx * by;
+            overlayBlockSize = block;
+
+            var blockBytes = new List<byte>();
+            var rect = new Rectangle(0, 0, target.Width, target.Height);
+            var bmpData = target.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
+            try
+            {
+                int stride = bmpData.Stride;
+                IntPtr scan0 = bmpData.Scan0;
+                for (int idx = 0; idx < totalBlocks; idx++)
+                {
+                    int xb = idx % bx, yb = idx / bx;
+                    int x0 = xb * block, y0 = yb * block;
+                    int bw = Math.Min(block, target.Width - x0), bh = Math.Min(block, target.Height - y0);
+                    if (bw <= 0 || bh <= 0) continue;
+                    for (int dy = 0; dy < bh; dy++)
+                    {
+                        IntPtr row = IntPtr.Add(scan0, (y0 + dy) * stride + x0 * 4);
+                        var line = new byte[bw * 4];
+                        System.Runtime.InteropServices.Marshal.Copy(row, line, 0, line.Length);
+                        blockBytes.AddRange(line);
+                    }
+                }
+            }
+            finally
+            {
+                target.UnlockBits(bmpData);
+            }
+
+            float alpha = Math.Max(0.01f, Math.Min(1f, options.OverlayOpacityPercent / 100f));
+            using var ia = new ImageAttributes();
+            var cm = new ColorMatrix { Matrix00 = 1f, Matrix11 = 1f, Matrix22 = 1f, Matrix33 = alpha, Matrix44 = 1f };
+            ia.SetColorMatrix(cm, ColorMatrixFlag.Default, ColorAdjustType.Bitmap);
+            var rnd = new Random(unchecked(Environment.TickCount * 397) ^ w ^ (h << 16));
+            using (var g = Graphics.FromImage(target))
+            {
+                for (int idx = 0; idx < totalBlocks; idx++)
+                {
+                    int xb = idx % bx, yb = idx / bx;
+                    int x0 = xb * block, y0 = yb * block;
+                    int bw = Math.Min(block, w - x0), bh = Math.Min(block, h - y0);
+                    if (bw <= 0 || bh <= 0) continue;
+                    var icon = icons[rnd.Next(icons.Count)];
+                    // 每块整块用图标填满，实现全覆盖、无未遮挡区域
+                    g.DrawImage(icon, new Rectangle(x0, y0, bw, bh), 0, 0, icon.Width, icon.Height, GraphicsUnit.Pixel, ia);
+                }
+            }
+            if (work != null)
+            {
+                using (var g = Graphics.FromImage(bmp)) g.DrawImage(work, 0, 0);
+                work.Dispose();
+            }
+            foreach (var icon in icons) { try { icon.Dispose(); } catch { } }
+            originalBlocks = blockBytes.ToArray();
+        }
+
+        private static byte[]? EncryptBlockData(string password, string saltBase64, byte[] data)
+        {
+            if (string.IsNullOrEmpty(password) || data == null || data.Length == 0) return null;
+            try
+            {
+                var salt = Convert.FromBase64String(saltBase64 ?? "");
+                if (salt.Length < 8) salt = Encoding.UTF8.GetBytes("IconOverlayBlocks");
+                using var kdf = new Rfc2898DeriveBytes(password, salt, 10000, HashAlgorithmName.SHA256);
+                var key = kdf.GetBytes(32);
+                using var aes = Aes.Create();
+                aes.Key = key;
+                aes.GenerateIV();
+                using var enc = aes.CreateEncryptor();
+                var iv = aes.IV;
+                var encrypted = enc.TransformFinalBlock(data, 0, data.Length);
+                var result = new byte[iv.Length + encrypted.Length];
+                Buffer.BlockCopy(iv, 0, result, 0, iv.Length);
+                Buffer.BlockCopy(encrypted, 0, result, iv.Length, encrypted.Length);
+                return result;
+            }
+            catch { return null; }
+        }
+
+        private static byte[]? DecryptBlockData(string password, string saltBase64, byte[] encryptedWithIv)
+        {
+            if (string.IsNullOrEmpty(password) || encryptedWithIv == null || encryptedWithIv.Length < 16) return null;
+            try
+            {
+                var salt = Convert.FromBase64String(saltBase64 ?? "");
+                if (salt.Length < 8) salt = Encoding.UTF8.GetBytes("IconOverlayBlocks");
+                using var kdf = new Rfc2898DeriveBytes(password, salt, 10000, HashAlgorithmName.SHA256);
+                var key = kdf.GetBytes(32);
+                using var aes = Aes.Create();
+                aes.Key = key;
+                var iv = new byte[16];
+                Buffer.BlockCopy(encryptedWithIv, 0, iv, 0, 16);
+                aes.IV = iv;
+                using var dec = aes.CreateDecryptor();
+                return dec.TransformFinalBlock(encryptedWithIv, 16, encryptedWithIv.Length - 16);
+            }
+            catch { return null; }
+        }
+
+        /// <summary>用密码解密得到的块数据写回位图，恢复遮挡前的加密图，便于再做像素解密。</summary>
+        private static bool RestoreIconOverlayBlocks(Bitmap bmp, byte[] blockData, int blockSize)
+        {
+            if (bmp == null || blockData == null || blockSize < 4) return false;
+            int w = bmp.Width, h = bmp.Height;
+            int bx = (w + blockSize - 1) / blockSize;
+            int by = (h + blockSize - 1) / blockSize;
+            if (bmp.PixelFormat != PixelFormat.Format32bppArgb)
+                return false;
+            var rect = new Rectangle(0, 0, w, h);
+            var bmpData = bmp.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
+            try
+            {
+                int stride = bmpData.Stride;
+                IntPtr scan0 = bmpData.Scan0;
+                int offset = 0;
+                for (int idx = 0; idx < bx * by && offset < blockData.Length; idx++)
+                {
+                    int xb = idx % bx, yb = idx / bx;
+                    int x0 = xb * blockSize, y0 = yb * blockSize;
+                    int bw = Math.Min(blockSize, w - x0), bh = Math.Min(blockSize, h - y0);
+                    int need = bw * bh * 4;
+                    if (offset + need > blockData.Length) break;
+                    for (int dy = 0; dy < bh; dy++)
+                    {
+                        IntPtr row = IntPtr.Add(scan0, (y0 + dy) * stride + x0 * 4);
+                        System.Runtime.InteropServices.Marshal.Copy(blockData, offset, row, bw * 4);
+                        offset += bw * 4;
+                    }
+                }
+                return true;
+            }
+            finally
+            {
+                bmp.UnlockBits(bmpData);
+            }
+        }
+
         private Bitmap ApplyPixelEffect(Image src, ImageEffectOptions options, string? password, bool encrypt)
         {
             var bmp = new Bitmap(src);
+            // 未勾选「像素化」：不启用任何模式算法（只执行图标覆盖等其它功能）
+            if (options.PixelationEnabled != true)
+                return bmp;
+
             return options.Mode switch
             {
                 ImageMode.Mosaic => ApplyMosaic(bmp, options.BlockSize),
@@ -719,7 +1068,7 @@ namespace EncryptTools.Ui
                 ImageMode.XorStream => ApplyXorStream(bmp, options, password),
                 ImageMode.BlockShuffle => ApplyBlockShuffle(bmp, options, password, encrypt),
                 ImageMode.ArnoldCat => ApplyArnoldCat(bmp, options, password, encrypt),
-                _ => ApplyMosaic(bmp, options.BlockSize)
+                _ => bmp
             };
         }
 
@@ -955,7 +1304,7 @@ namespace EncryptTools.Ui
             if (string.IsNullOrEmpty(password)) throw new InvalidOperationException("missing password");
             if (bmp.Width != bmp.Height)
                 throw new InvalidOperationException("Arnold 仅支持正方形图片。");
-            return ArnoldScramble(bmp, encrypt, options.ArnoldIterations);
+            return ArnoldScramble(bmp, encrypt, 10);
         }
 
         private static Bitmap ArnoldScramble(Bitmap bmp, bool encrypt, int iterations)
@@ -992,6 +1341,11 @@ namespace EncryptTools.Ui
         {
             var tab = _sheetTabs.SelectedTab;
             if (tab == null) return;
+            if (string.IsNullOrWhiteSpace(_passwordFilePath) || !File.Exists(_passwordFilePath))
+            {
+                _log($"[{DateTime.Now:HH:mm:ss}] 请先选择密码文件(.pwd)后再保存。");
+                return;
+            }
 
             if (tab.Tag is not ImageSheetState state)
             {
@@ -1066,6 +1420,11 @@ namespace EncryptTools.Ui
         private void SaveBatchOutput()
         {
             if (_sheetTabs.TabPages.Count == 0) return;
+            if (string.IsNullOrWhiteSpace(_passwordFilePath) || !File.Exists(_passwordFilePath))
+            {
+                _log($"[{DateTime.Now:HH:mm:ss}] 请先选择密码文件(.pwd)后再保存。");
+                return;
+            }
 
             bool saveDecrypted = _lastActionWasDecrypt;
             int total = _sheetTabs.TabPages.Count;
