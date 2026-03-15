@@ -169,7 +169,7 @@ namespace EncryptTools.Ui
             {
                 using var dlg = new OpenFileDialog
                 {
-                    Filter = "图片|*.png;*.jpg;*.jpeg;*.bmp|所有文件|*.*",
+                    Filter = "图片|*.png;*.jpg;*.jpeg;*.jfif;*.jpe;*.bmp;*.gif|所有文件|*.*",
                     Multiselect = true
                 };
                 if (dlg.ShowDialog(FindForm()) == DialogResult.OK && dlg.FileNames.Length > 0)
@@ -187,7 +187,7 @@ namespace EncryptTools.Ui
             {
                 using var dlg = new OpenFileDialog
                 {
-                    Filter = "图片|*.png;*.jpg;*.jpeg;*.bmp;*.ico|所有文件|*.*",
+                    Filter = "图片|*.png;*.jpg;*.jpeg;*.jfif;*.jpe;*.bmp;*.gif;*.ico|所有文件|*.*",
                     Multiselect = true
                 };
                 if (dlg.ShowDialog(FindForm()) == DialogResult.OK && dlg.FileNames.Length > 0)
@@ -381,7 +381,7 @@ namespace EncryptTools.Ui
                 var dir = GetIcoDirectory();
                 Directory.CreateDirectory(dir);
                 var files = Directory.GetFiles(dir, "*.*", SearchOption.TopDirectoryOnly)
-                    .Where(f => new[] { ".png", ".jpg", ".jpeg", ".bmp", ".ico" }.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
+                    .Where(f => new[] { ".png", ".jpg", ".jpeg", ".jfif", ".jpe", ".bmp", ".gif", ".ico" }.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
                     .Select(Path.GetFileName)
                     .Where(n => !string.IsNullOrWhiteSpace(n))
                     .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
@@ -565,7 +565,7 @@ namespace EncryptTools.Ui
             public int IconOverlayBlockSize { get; set; }
         }
 
-        private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".gif" };
+        private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".jfif", ".jpe", ".bmp", ".gif" };
 
         private void AddImagePath(string path)
         {
