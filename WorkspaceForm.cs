@@ -1065,6 +1065,19 @@ namespace EncryptTools
             return list;
         }
 
+        private static string GetRelativePathCompat(string basePath, string fullPath)
+        {
+            try
+            {
+                var baseFull = Path.GetFullPath(basePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                var fullFull = Path.GetFullPath(fullPath);
+                if (fullFull.StartsWith(baseFull, StringComparison.OrdinalIgnoreCase))
+                    return fullFull.Substring(baseFull.Length).Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+            }
+            catch { }
+            return Path.GetFileName(fullPath);
+        }
+
         /// <summary>
         /// 去掉被其他路径包含的子路径，避免递归时同一文件被处理多次（如同时拖入 D:\test 和 D:\test\子文件夹）。
         /// </summary>
@@ -1258,6 +1271,22 @@ namespace EncryptTools
             }
         }
 
+        private static int CountExePayloadInFolder(string dir)
+        {
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+                return 0;
+            try
+            {
+                int n = 0;
+                foreach (string f in Directory.GetFiles(dir, "*.exe", SearchOption.AllDirectories))
+                {
+                    if (ExePayload.HasPayload(f)) n++;
+                }
+                return n;
+            }
+            catch { return 0; }
+        }
+
         private async Task ExecuteEncryptWorkspace(WorkspaceContext ctx)
         {
             try
@@ -1287,8 +1316,16 @@ namespace EncryptTools
                 // 单 exe 兼容：不拦截；加密时自动用 GcmRunner（.NET 8 已装）或 CBC（未装）
 
                 _statusLeft.Text = "执行加密中…";
-                // 统一由外层拦截并精简日志，这里不直接写入日志框
-                var log = new Action<string>(_ => { });
+                var log = new Action<string>(m =>
+                {
+                    if (string.IsNullOrEmpty(m)) return;
+                    try
+                    {
+                        string line = m.IndexOf(']') > 0 ? m : $"[{DateTime.Now:HH:mm:ss}] {m}";
+                        ctx.LogBox.AppendText(line + Environment.NewLine);
+                    }
+                    catch { }
+                });
 
                 string commonOutputRoot;
                 if (inPlace)
@@ -1319,7 +1356,7 @@ namespace EncryptTools
                         continue;
                     }
 
-                    if (packExe && !isDir)
+                    if (packExe)
                     {
                         var template = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "encryptTools.self.exe");
                         if (!File.Exists(template)) template = Application.ExecutablePath;
@@ -1329,66 +1366,79 @@ namespace EncryptTools
                             continue;
                         }
 
-                        var outExe = Path.Combine(outDir, Path.GetFileNameWithoutExtension(source) + ".exe");
-                        log($"[{DateTime.Now:HH:mm:ss}] 开始封装EXE: {source} -> {outExe}");
-                        log($"[{DateTime.Now:HH:mm:ss}] 使用模板: {template}");
-
-                        var tmpEnc = Path.Combine(Path.GetTempPath(), "encryptTools_pack_" + Guid.NewGuid().ToString("N") + ".enc");
-                        try
+                        var filesToPack = isDir
+                            ? Directory.GetFiles(source, "*", SearchOption.AllDirectories).Where(f => !Directory.Exists(f)).ToList()
+                            : new List<string> { source };
+                        if (filesToPack.Count == 0)
                         {
-                            bool packUseGcm = (algorithm == CryptoAlgorithm.AesGcm && RuntimeHelper.IsNet8InstalledOnMachine && !RuntimeHelper.IsNet8OrHigher);
-                            CryptoAlgorithm packAlgo = algorithm;
-                            if (algorithm == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher && !RuntimeHelper.IsNet8InstalledOnMachine)
-                                packAlgo = CryptoAlgorithm.AesCbc;
+                            log($"[{DateTime.Now:HH:mm:ss}] 文件夹为空，跳过封装: {source}");
+                            continue;
+                        }
 
-                            if (packUseGcm)
+                        foreach (var oneFile in filesToPack)
+                        {
+                            if (!File.Exists(oneFile)) continue;
+                            string outExe;
+                            if (isDir)
                             {
-                                bool ok = await GcmRunner.EncryptAsync(source, tmpEnc, password, m => log($"[{DateTime.Now:HH:mm:ss}] {m}")).ConfigureAwait(false);
-                                if (!ok) { log($"[{DateTime.Now:HH:mm:ss}] 封装EXE失败: GCM 加密失败"); continue; }
+                                var rel = GetRelativePathCompat(source, oneFile);
+                                rel = Path.ChangeExtension(rel, ".exe");
+                                outExe = Path.Combine(outDir, rel);
                             }
                             else
                             {
-                                var crypto = new CryptoService();
-                                await crypto.EncryptFileAsync(source, tmpEnc, packAlgo, password, 200_000, 256, null, CancellationToken.None);
+                                outExe = Path.Combine(outDir, Path.GetFileNameWithoutExtension(oneFile) + ".exe");
                             }
-                            log($"[{DateTime.Now:HH:mm:ss}] 已生成临时加密文件: {tmpEnc}");
+                            try { Directory.CreateDirectory(Path.GetDirectoryName(outExe) ?? outDir); } catch { }
 
-                            var encBytes = File.ReadAllBytes(tmpEnc);
-                            var meta = new ExePayload.PayloadMeta { Type = "file", Note = "encryptTools packed payload" };
-                            ExePayload.WritePackedExe(template, outExe, meta, encBytes);
-
-                            log($"[{DateTime.Now:HH:mm:ss}] 已写入封装EXE: {outExe}");
-                            UpdateFileListItemPathStatus(ctx.FileListView, source, outExe, "已封装EXE");
-                            if (inPlace)
-                            {
-                                try
-                                {
-                                    File.Delete(source);
-                                    log($"[{DateTime.Now:HH:mm:ss}] 已删除源文件: {source}");
-                                }
-                                catch (Exception exDel)
-                                {
-                                    log($"[{DateTime.Now:HH:mm:ss}] 删除源文件失败: {exDel.Message}");
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            log($"[{DateTime.Now:HH:mm:ss}] 封装EXE失败: {ex.Message}");
-                        }
-                        finally
-                        {
+                            log($"[{DateTime.Now:HH:mm:ss}] 开始封装EXE: {oneFile} -> {outExe}");
+                            var tmpEnc = Path.Combine(Path.GetTempPath(), "encryptTools_pack_" + Guid.NewGuid().ToString("N") + ".enc");
                             try
                             {
-                                if (File.Exists(tmpEnc))
+                                // 封装 exe 时若非 .NET 8 环境则一律使用 CBC，确保打包后的 exe 在本机可直接解密
+                                CryptoAlgorithm packAlgo = RuntimeHelper.IsNet8OrHigher ? algorithm : CryptoAlgorithm.AesCbc;
+                                if (packAlgo == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher && RuntimeHelper.IsNet8InstalledOnMachine)
+                                    packAlgo = CryptoAlgorithm.AesCbc;
+                                bool packUseGcm = (packAlgo == CryptoAlgorithm.AesGcm && RuntimeHelper.IsNet8InstalledOnMachine && !RuntimeHelper.IsNet8OrHigher);
+
+                                if (packUseGcm)
                                 {
-                                    File.Delete(tmpEnc);
-                                    log($"[{DateTime.Now:HH:mm:ss}] 已删除临时文件: {tmpEnc}");
+                                    bool ok = await GcmRunner.EncryptAsync(oneFile, tmpEnc, password, m => log($"[{DateTime.Now:HH:mm:ss}] {m}")).ConfigureAwait(false);
+                                    if (!ok) { log($"[{DateTime.Now:HH:mm:ss}] 封装EXE失败: GCM 加密失败"); continue; }
+                                }
+                                else
+                                {
+                                    var crypto = new CryptoService();
+                                    await crypto.EncryptFileAsync(oneFile, tmpEnc, packAlgo, password, 200_000, 256, null, CancellationToken.None);
+                                }
+                                log($"[{DateTime.Now:HH:mm:ss}] 已生成临时加密文件: {tmpEnc}");
+
+                                var encBytes = File.ReadAllBytes(tmpEnc);
+                                var meta = new ExePayload.PayloadMeta { Type = "file", Note = "encryptTools packed payload" };
+                                ExePayload.WritePackedExe(template, outExe, meta, encBytes);
+
+                                log($"[{DateTime.Now:HH:mm:ss}] 已写入封装EXE: {outExe}");
+                                UpdateFileListItemPathStatus(ctx.FileListView, oneFile, outExe, "已封装EXE");
+                                if (inPlace && !isDir)
+                                {
+                                    try
+                                    {
+                                        File.Delete(oneFile);
+                                        log($"[{DateTime.Now:HH:mm:ss}] 已删除源文件: {oneFile}");
+                                    }
+                                    catch (Exception exDel)
+                                    {
+                                        log($"[{DateTime.Now:HH:mm:ss}] 删除源文件失败: {exDel.Message}");
+                                    }
                                 }
                             }
-                            catch (Exception exTmp)
+                            catch (Exception ex)
                             {
-                                log($"[{DateTime.Now:HH:mm:ss}] 删除临时文件失败: {exTmp.Message}");
+                                log($"[{DateTime.Now:HH:mm:ss}] 封装EXE失败: {ex.Message}");
+                            }
+                            finally
+                            {
+                                try { if (File.Exists(tmpEnc)) File.Delete(tmpEnc); } catch { }
                             }
                         }
                         continue;
@@ -1475,8 +1525,16 @@ namespace EncryptTools
 
                 bool inPlace = ctx.ChkOverwrite?.Checked ?? false;
                 _statusLeft.Text = "执行解密中…";
-                // 解密同样只对实际处理的文件输出“已解密 xxx”，其它内部日志全部忽略
-                var log = new Action<string>(_ => { });
+                var log = new Action<string>(m =>
+                {
+                    if (string.IsNullOrEmpty(m)) return;
+                    try
+                    {
+                        string line = m.IndexOf(']') > 0 ? m : $"[{DateTime.Now:HH:mm:ss}] {m}";
+                        ctx.LogBox.AppendText(line + Environment.NewLine);
+                    }
+                    catch { }
+                });
 
                 string commonParent = GetCommonParentOnly(paths);
                 // 非覆盖模式下，从工作区路径的上级目录中查找所有 UUID_pwd_output 目录；
@@ -1524,9 +1582,13 @@ namespace EncryptTools
                 if (!inPlace && outputFolders.Count > 0)
                 {
                     int totalEnc = 0;
+                    int totalExePayload = 0;
                     foreach (var dir in outputFolders)
+                    {
                         totalEnc += CountEncryptedFilesInFolder(dir);
-                    if (totalEnc == 0)
+                        totalExePayload += CountExePayloadInFolder(dir);
+                    }
+                    if (totalEnc == 0 && totalExePayload == 0)
                     {
                         foreach (var p in paths)
                             UpdateFileListItemPathStatus(ctx.FileListView, p, p, "已解密");
@@ -1535,7 +1597,19 @@ namespace EncryptTools
                     }
                 }
 
-                var decryptSources = inPlace ? paths : outputFolders;
+                var decryptSources = new List<string>();
+                if (inPlace)
+                    decryptSources.AddRange(paths);
+                else
+                {
+                    decryptSources.AddRange(outputFolders);
+                    foreach (var p in paths)
+                    {
+                        if (File.Exists(p) && p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && ExePayload.HasPayload(p)
+                            && !decryptSources.Any(s => string.Equals(s, p, StringComparison.OrdinalIgnoreCase)))
+                            decryptSources.Add(p);
+                    }
+                }
                 foreach (var source in decryptSources)
                 {
                     if (!File.Exists(source) && !Directory.Exists(source))
@@ -1552,7 +1626,9 @@ namespace EncryptTools
                     {
                         if (!isDir)
                         {
-                            if (!CryptoService.IsWxEncryptedFile(source))
+                            bool isWxEnc = CryptoService.IsWxEncryptedFile(source);
+                            bool isExeWithPayload = Path.GetExtension(source).Equals(".exe", StringComparison.OrdinalIgnoreCase) && ExePayload.HasPayload(source);
+                            if (!isWxEnc && !isExeWithPayload)
                             {
                                 continue;
                             }
@@ -1561,31 +1637,89 @@ namespace EncryptTools
                         {
                             if (CountEncryptedFilesInFolder(source) == 0)
                             {
-                                continue;
+                                try
+                                {
+                                    if (!Directory.GetFiles(source, "*.exe").Any(p => ExePayload.HasPayload(p)))
+                                        continue;
+                                }
+                                catch { continue; }
                             }
                         }
                     }
                     else
                     {
-                        // 非覆盖模式下，只有目录才会出现在解密源列表；若目录内已无加密文件则直接静默跳过
+                        // 非覆盖模式下，若目录内既无 .enc 也无带载荷的 .exe，则跳过
                         if (isDir && CountEncryptedFilesInFolder(source) == 0)
                         {
-                            continue;
+                            try
+                            {
+                                if (!Directory.GetFiles(source, "*.exe").Any(p => ExePayload.HasPayload(p)))
+                                    continue;
+                            }
+                            catch { continue; }
                         }
                     }
 
-                    string outDir = inPlace ? (isDir ? source : (Path.GetDirectoryName(source) ?? source)) : source;
+                    string outDir = inPlace
+                        ? (isDir ? source : (Path.GetDirectoryName(source) ?? source))
+                        : (isDir ? source : (Path.GetDirectoryName(source) ?? Environment.CurrentDirectory));
 
-                    if (!inPlace)
+                    if (!inPlace && isDir)
                         isDir = true;
+
+                    if (isDir)
+                    {
+                        try
+                        {
+                            foreach (var exePath in Directory.GetFiles(source, "*.exe"))
+                            {
+                                if (!ExePayload.HasPayload(exePath)) continue;
+                                if (!ExePayload.TryReadPayload(exePath, out var meta, out var encBytes, out var errExe) || encBytes == null) { log($"封装EXE载荷读取失败: {exePath}" + (string.IsNullOrEmpty(errExe) ? "" : " (" + errExe + ")")); continue; }
+                                var tmpEnc = Path.Combine(Path.GetTempPath(), "encryptTools_exe_dec_" + Guid.NewGuid().ToString("N") + ".enc");
+                                await Compat.FileWriteAllBytesAsync(tmpEnc, encBytes);
+                                var tmpOut = Path.Combine(outDir, "decrypt_" + Guid.NewGuid().ToString("N") + ".tmp");
+                                CryptoService.DecryptResult result;
+                                try
+                                {
+                                    var (peekAlg, peekName) = CryptoService.PeekEncryptedFileInfo(tmpEnc);
+                                    if (peekAlg == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher && RuntimeHelper.IsNet8InstalledOnMachine)
+                                    {
+                                        bool ok = await GcmRunner.DecryptAsync(tmpEnc, tmpOut, password, null).ConfigureAwait(false);
+                                        if (!ok) { log($"封装EXE解密失败: {exePath} - GCM 执行失败"); try { File.Delete(tmpEnc); } catch { } continue; }
+                                        result = new CryptoService.DecryptResult { OriginalFileName = peekName };
+                                    }
+                                    else if (peekAlg == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher)
+                                    {
+                                        log($"封装EXE解密失败: {exePath} - 载荷为 GCM 加密，本机未安装 .NET 8");
+                                        try { File.Delete(tmpEnc); } catch { }
+                                        continue;
+                                    }
+                                    else
+                                    {
+                                        var crypto = new CryptoService();
+                                        result = await crypto.DecryptFileAsync(tmpEnc, tmpOut, password, null, CancellationToken.None);
+                                    }
+                                }
+                                finally { try { File.Delete(tmpEnc); } catch { } }
+                                var desiredName = string.IsNullOrWhiteSpace(result.OriginalFileName) ? Path.GetFileNameWithoutExtension(exePath) + "_decrypted" : SanitizeFileNameLocal(result.OriginalFileName);
+                                var outPath = Path.Combine(outDir, desiredName);
+                                try { if (File.Exists(outPath)) File.Delete(outPath); } catch { }
+                                Compat.FileMoveOverwrite(tmpOut, outPath);
+                                try { ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已解密(EXE): {outPath}{Environment.NewLine}"); } catch { }
+                                UpdateFileListItemPathStatus(ctx.FileListView, exePath, outPath, "正常");
+                                if (inPlace) { try { File.Delete(exePath); } catch { } }
+                            }
+                        }
+                        catch (Exception ex) { log($"目录内封装EXE解密异常: {ex.Message}"); }
+                    }
 
                     if (!isDir && Path.GetExtension(source).Equals(".exe", StringComparison.OrdinalIgnoreCase) && ExePayload.HasPayload(source))
                     {
                         try
                         {
-                            if (!ExePayload.TryReadPayload(source, out var meta, out var encBytes) || encBytes == null)
+                            if (!ExePayload.TryReadPayload(source, out var meta, out var encBytes, out var errExe) || encBytes == null)
                             {
-                                log($"封装EXE载荷读取失败: {source}");
+                                log($"封装EXE载荷读取失败: {source}" + (string.IsNullOrEmpty(errExe) ? "" : " (" + errExe + ")"));
                                 continue;
                             }
                             var tmpEnc = Path.Combine(Path.GetTempPath(), "encryptTools_exe_dec_" + Guid.NewGuid().ToString("N") + ".enc");
@@ -1618,6 +1752,7 @@ namespace EncryptTools
                             var outPath = Path.Combine(outDir, desiredName);
                             try { if (File.Exists(outPath)) File.Delete(outPath); } catch { }
                             Compat.FileMoveOverwrite(tmpOut, outPath);
+                            try { ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已解密(EXE): {outPath}{Environment.NewLine}"); } catch { }
                             UpdateFileListItemPathStatus(ctx.FileListView, source, outPath, "正常");
                             if (inPlace) { try { File.Delete(source); } catch { } }
                         }

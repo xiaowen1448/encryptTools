@@ -134,9 +134,9 @@ namespace EncryptTools
         {
             try
             {
-                if (!ExePayload.TryReadPayload(_exePath, out var meta, out var encryptedBytes) || encryptedBytes == null)
+                if (!ExePayload.TryReadPayload(_exePath, out var meta, out var encryptedBytes, out var payloadErr) || encryptedBytes == null)
                 {
-                    FailAndSelfDelete("载荷读取失败。");
+                    FailAndSelfDelete("载荷读取失败。" + (string.IsNullOrEmpty(payloadErr) ? "" : " " + payloadErr));
                     return;
                 }
 
