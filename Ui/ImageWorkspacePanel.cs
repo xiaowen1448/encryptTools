@@ -33,6 +33,7 @@ namespace EncryptTools.Ui
         private NumericUpDown _numIconScale = null!;
         private List<string> _customIconPaths = new List<string>();
         private bool _lastActionWasDecrypt;
+        private ToolTip? _toolTip;
 
         public ImageWorkspacePanel(Action<string> log, Action<double>? reportProgress = null)
         {
@@ -67,26 +68,30 @@ namespace EncryptTools.Ui
             };
             var btnSelect = new Button { Text = "选择图片", AutoSize = true, Margin = new Padding(0, 0, 8, 4) };
             var lblHint = new Label { Text = "支持拖拽", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 6, 16, 0) };
-            _cbMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(100, 0) };
+            _toolTip = new ToolTip { AutoPopDelay = 8000 };
+            const int comboMaxW = 140;
+            _cbMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(100, 0), MaximumSize = new Size(comboMaxW, 0), Width = 120 };
             _cbMode.Items.AddRange(new object[] { "不可逆马赛克(仅效果)", "密钥置乱(可逆)", "像素XOR(可逆)", "分块置乱(可逆)" });
             _cbMode.SelectedIndex = 1;
-            _cbMode.DropDown += (_, __) => SetComboDropDownWidth(_cbMode);
-            SetComboDropDownWidth(_cbMode);
+            _cbMode.DropDown += (_, __) => SetComboDropDownWidth(_cbMode, comboMaxW);
+            SetComboDropDownWidth(_cbMode, comboMaxW);
             _chkPixelation = new CheckBox { Text = "像素化", AutoSize = true, Margin = new Padding(4, 6, 8, 0), Checked = false };
-            _cbBlock = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(56, 0) };
+            _cbBlock = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(56, 0), MaximumSize = new Size(comboMaxW, 0), Width = 72 };
             _cbBlock.Items.AddRange(new object[] { "4×4", "8×8", "16×16", "24×24", "32×32", "48×48", "64×64" });
             _cbBlock.SelectedIndex = 2;
-            _cbBlock.DropDown += (_, __) => SetComboDropDownWidth(_cbBlock);
-            SetComboDropDownWidth(_cbBlock);
+            _cbBlock.DropDown += (_, __) => SetComboDropDownWidth(_cbBlock, comboMaxW);
+            SetComboDropDownWidth(_cbBlock, comboMaxW);
             var btnEncrypt = new Button { Text = "加密(批量)", BackColor = Color.RoyalBlue, ForeColor = Color.White, AutoSize = true, Margin = new Padding(8, 0, 4, 4) };
             var btnDecrypt = new Button { Text = "解密(批量)", BackColor = Color.SeaGreen, ForeColor = Color.White, AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
             var btnSave = new Button { Text = "保存输出(批量)", AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
 
-            _cbPwdFiles = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(120, 0) };
-            _cbPwdFiles.DropDown += (_, __) => SetComboDropDownWidth(_cbPwdFiles);
+            _cbPwdFiles = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(100, 0), MaximumSize = new Size(comboMaxW, 0), Width = 120 };
+            _cbPwdFiles.DropDown += (_, __) => SetComboDropDownWidth(_cbPwdFiles, comboMaxW);
             _chkIconOverlay = new CheckBox { Text = "图标覆盖", AutoSize = true, Margin = new Padding(4, 6, 4, 0), Checked = true };
-            _cbIcons = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(120, 0) };
-            _cbIcons.DropDown += (_, __) => SetComboDropDownWidth(_cbIcons);
+            int btnHeight = 24;
+            _cbIcons = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 4, 4), MinimumSize = new Size(100, 0), MaximumSize = new Size(comboMaxW, 0), Width = 120 };
+            _cbIcons.DropDown += (_, __) => SetComboDropDownWidth(_cbIcons, comboMaxW);
+            var picIconThumb = new PictureBox { Size = new Size(btnHeight, btnHeight), SizeMode = PictureBoxSizeMode.Zoom, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 4, 8, 4), BackColor = SystemColors.Window };
             _numOverlayOpacity = new NumericUpDown { Minimum = 1, Maximum = 100, Value = 80, Width = 44, Margin = new Padding(2, 4, 4, 4) };
             _numIconScale = new NumericUpDown { Minimum = 10, Maximum = 200, Value = 80, Width = 44, Margin = new Padding(2, 4, 8, 4) };
 
@@ -103,6 +108,7 @@ namespace EncryptTools.Ui
             toolbar.Controls.Add(_chkIconOverlay);
             toolbar.Controls.Add(new Label { Text = "图标:", AutoSize = true, Margin = new Padding(4, 8, 2, 0) });
             toolbar.Controls.Add(_cbIcons);
+            toolbar.Controls.Add(picIconThumb);
             toolbar.Controls.Add(new Label { Text = "透明度%:", AutoSize = true, Margin = new Padding(4, 8, 2, 0) });
             toolbar.Controls.Add(_numOverlayOpacity);
             toolbar.Controls.Add(new Label { Text = "图标缩放%:", AutoSize = true, Margin = new Padding(4, 8, 2, 0) });
@@ -192,19 +198,22 @@ namespace EncryptTools.Ui
                 };
                 if (dlg.ShowDialog(FindForm()) == DialogResult.OK && dlg.FileNames.Length > 0)
                 {
+                    string? firstImportedName = null;
                     int copied = 0;
                     foreach (var f in dlg.FileNames)
                     {
                         try
                         {
-                            var dst = Path.Combine(GetIcoDirectory(), Path.GetFileName(f));
+                            var name = Path.GetFileName(f);
+                            var dst = Path.Combine(GetIcoDirectory(), name);
                             Directory.CreateDirectory(GetIcoDirectory());
                             File.Copy(f, dst, overwrite: true);
+                            if (firstImportedName == null) firstImportedName = name;
                             copied++;
                         }
                         catch { }
                     }
-                    RefreshIconsCombo();
+                    RefreshIconsCombo(selectFileName: firstImportedName);
                     _log($"[{DateTime.Now:HH:mm:ss}] 已导入 {copied} 个图标到 ico 目录。");
                 }
             };
@@ -215,10 +224,18 @@ namespace EncryptTools.Ui
                 {
                     var full = Path.Combine(GetIcoDirectory(), name);
                     _customIconPaths = File.Exists(full) ? new List<string> { full } : new List<string>();
+                    try
+                    {
+                        picIconThumb.Image?.Dispose();
+                        picIconThumb.Image = File.Exists(full) ? Image.FromFile(full) : null;
+                    }
+                    catch { picIconThumb.Image = null; }
                 }
                 else
                 {
                     _customIconPaths = new List<string>();
+                    picIconThumb.Image?.Dispose();
+                    picIconThumb.Image = null;
                 }
             };
 
@@ -241,8 +258,22 @@ namespace EncryptTools.Ui
                     _log($"[{DateTime.Now:HH:mm:ss}] 已选择密码文件: {item.DisplayName}");
                 }
             };
+            void UpdateComboTooltip(ComboBox cb)
+            {
+                if (_toolTip == null) return;
+                var t = cb.SelectedItem is PasswordFileItem p ? p.DisplayName : cb.SelectedItem?.ToString() ?? "";
+                _toolTip.SetToolTip(cb, t);
+            }
+            _cbMode.SelectedIndexChanged += (_, __) => UpdateComboTooltip(_cbMode);
+            _cbBlock.SelectedIndexChanged += (_, __) => UpdateComboTooltip(_cbBlock);
+            _cbPwdFiles.SelectedIndexChanged += (_, __) => UpdateComboTooltip(_cbPwdFiles);
+            _cbIcons.SelectedIndexChanged += (_, __) => UpdateComboTooltip(_cbIcons);
             RefreshPasswordFiles();
             RefreshIconsCombo();
+            UpdateComboTooltip(_cbMode);
+            UpdateComboTooltip(_cbBlock);
+            UpdateComboTooltip(_cbPwdFiles);
+            UpdateComboTooltip(_cbIcons);
 
             // 图片 Tab 右键菜单：关闭此文件 / 关闭其他文件
             var imageTabMenu = new ContextMenuStrip();
@@ -348,8 +379,9 @@ namespace EncryptTools.Ui
                     {
                         rightBox.Image?.Dispose();
                         rightBox.Image = processed;
-                        rightBox.Tag = new ZoomState { BaseSize = processed.Size, Zoom = 1f };
-                        rightBox.Size = FitThumbnailSize(processed.Size, 480, 360);
+                        var sz = FitThumbnailSize(processed.Size, 480, 360);
+                        rightBox.Tag = new ZoomState { BaseSize = processed.Size, InitialDisplaySize = sz, Zoom = 1f };
+                        rightBox.Size = sz;
                         tab.Tag = new ImageSheetState { Path = path, EncryptedImage = (Bitmap)processed.Clone(), Options = options };
                         _log($"[{DateTime.Now:HH:mm:ss}] 加密完成: {Path.GetFileName(path)}");
                     }
@@ -374,7 +406,7 @@ namespace EncryptTools.Ui
             }
         }
 
-        private void RefreshIconsCombo()
+        private void RefreshIconsCombo(string? selectFileName = null)
         {
             try
             {
@@ -393,8 +425,19 @@ namespace EncryptTools.Ui
                 foreach (var n in files) _cbIcons.Items.Add(n!);
                 _cbIcons.EndUpdate();
 
+                if (!string.IsNullOrWhiteSpace(selectFileName))
+                {
+                    for (int i = 0; i < _cbIcons.Items.Count; i++)
+                    {
+                        if (string.Equals(_cbIcons.Items[i]?.ToString(), selectFileName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _cbIcons.SelectedIndex = i;
+                            break;
+                        }
+                    }
+                }
                 if (_cbIcons.SelectedIndex < 0) _cbIcons.SelectedIndex = 0;
-                SetComboDropDownWidth(_cbIcons);
+                SetComboDropDownWidth(_cbIcons, 140);
             }
             catch { }
         }
@@ -484,8 +527,9 @@ namespace EncryptTools.Ui
                     {
                         rightBox.Image?.Dispose();
                         rightBox.Image = decrypted;
-                        rightBox.Tag = new ZoomState { BaseSize = decrypted.Size, Zoom = 1f };
-                        rightBox.Size = FitThumbnailSize(decrypted.Size, 480, 360);
+                        var sz = FitThumbnailSize(decrypted.Size, 480, 360);
+                        rightBox.Tag = new ZoomState { BaseSize = decrypted.Size, InitialDisplaySize = sz, Zoom = 1f };
+                        rightBox.Size = sz;
                         _log($"[{DateTime.Now:HH:mm:ss}] 解密完成: {Path.GetFileName(state.Path)}");
                     }
                 }
@@ -529,10 +573,12 @@ namespace EncryptTools.Ui
             public override string ToString() => DisplayName;
         }
 
-        /// <summary>预览区缩放状态：1:1 时恢复为图片原始像素尺寸。</summary>
+        /// <summary>预览区缩放状态：1:1 为首次打开时的显示尺寸，Zoom 为相对该尺寸的缩放。</summary>
         private sealed class ZoomState
         {
             public Size BaseSize;
+            /// <summary>首次打开时的显示尺寸（如 FitThumbnailSize 结果），1:1 恢复为此尺寸。</summary>
+            public Size InitialDisplaySize;
             public float Zoom = 1f;
         }
 
@@ -634,22 +680,17 @@ namespace EncryptTools.Ui
             {
                 leftBox.Image = Image.FromFile(imagePath);
                 if (leftBox.Image != null)
-                    leftBox.Tag = new ZoomState { BaseSize = leftBox.Image.Size, Zoom = 1f };
+                {
+                    var sz = FitThumbnailSize(leftBox.Image.Size, 480, 360);
+                    leftBox.Tag = new ZoomState { BaseSize = leftBox.Image.Size, InitialDisplaySize = sz, Zoom = 1f };
+                    leftBox.Size = sz;
+                }
             }
             catch { }
 
             split.Panel1.Controls.Add(leftPanel);
             split.Panel2.Controls.Add(rightPanel);
             tab.Controls.Add(split);
-            try
-            {
-                if (leftBox.Image != null)
-                {
-                    var sz = FitThumbnailSize(leftBox.Image.Size, 480, 360);
-                    leftBox.Size = sz;
-                }
-            }
-            catch { }
             _sheetTabs.TabPages.Add(tab);
             _sheetTabs.SelectedTab = tab;
 
@@ -686,8 +727,9 @@ namespace EncryptTools.Ui
             {
                 rightBox.Image?.Dispose();
                 rightBox.Image = processed;
-                rightBox.Tag = new ZoomState { BaseSize = processed.Size, Zoom = 1f };
-                rightBox.Size = FitThumbnailSize(processed.Size, 480, 360);
+                var sz = FitThumbnailSize(processed.Size, 480, 360);
+                rightBox.Tag = new ZoomState { BaseSize = processed.Size, InitialDisplaySize = sz, Zoom = 1f };
+                rightBox.Size = sz;
                 tab.Tag = new ImageSheetState { Path = imagePath, EncryptedImage = (Bitmap)processed.Clone(), Options = options };
             }
         }
@@ -697,7 +739,11 @@ namespace EncryptTools.Ui
             var outer = new Panel { Dock = DockStyle.Fill };
             var toolBar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 28, FlowDirection = FlowDirection.LeftToRight, BackColor = SystemColors.ControlDark };
             var btnZoom100 = new Button { Text = "1:1", AutoSize = true, Margin = new Padding(2) };
+            var btnZoomIn = new Button { Text = "+", AutoSize = true, Margin = new Padding(2), Width = 28 };
+            var btnZoomOut = new Button { Text = "-", AutoSize = true, Margin = new Padding(2), Width = 28 };
             toolBar.Controls.Add(btnZoom100);
+            toolBar.Controls.Add(btnZoomIn);
+            toolBar.Controls.Add(btnZoomOut);
 
             var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
             var pb = new PictureBox { SizeMode = PictureBoxSizeMode.Zoom, Location = new Point(0, 0), BorderStyle = BorderStyle.FixedSingle };
@@ -709,7 +755,8 @@ namespace EncryptTools.Ui
             {
                 var s = pb.Tag as ZoomState;
                 if (s != null) return s;
-                s = new ZoomState { BaseSize = pb.Image?.Size ?? Size.Empty, Zoom = 1f };
+                var imgSize = pb.Image?.Size ?? Size.Empty;
+                s = new ZoomState { BaseSize = imgSize, InitialDisplaySize = imgSize, Zoom = 1f };
                 pb.Tag = s;
                 return s;
             }
@@ -717,20 +764,40 @@ namespace EncryptTools.Ui
             {
                 if (pb.Image == null) return;
                 var st = GetState();
-                if (st.BaseSize.Width <= 0 || st.BaseSize.Height <= 0)
-                    st.BaseSize = pb.Image.Size;
-                int w = (int)(st.BaseSize.Width * st.Zoom);
-                int h = (int)(st.BaseSize.Height * st.Zoom);
+                if (st.InitialDisplaySize.Width <= 0 || st.InitialDisplaySize.Height <= 0)
+                    st.InitialDisplaySize = FitThumbnailSize(pb.Image.Size, 480, 360);
+                int w = (int)(st.InitialDisplaySize.Width * st.Zoom);
+                int h = (int)(st.InitialDisplaySize.Height * st.Zoom);
                 pb.Size = new Size(Math.Max(1, w), Math.Max(1, h));
             }
-            // 1:1 = 恢复为刚打开时的比例（图片原始像素尺寸）
+            // 1:1 = 恢复为首次打开时的显示尺寸，不放大
             btnZoom100.Click += (_, __) =>
             {
                 if (pb.Image == null) return;
                 var st = GetState();
                 st.BaseSize = pb.Image.Size;
+                if (st.InitialDisplaySize.Width <= 0 || st.InitialDisplaySize.Height <= 0)
+                    st.InitialDisplaySize = FitThumbnailSize(pb.Image.Size, 480, 360);
                 st.Zoom = 1f;
-                pb.Size = st.BaseSize;
+                pb.Size = st.InitialDisplaySize;
+            };
+            btnZoomIn.Click += (_, __) =>
+            {
+                if (pb.Image == null) return;
+                var st = GetState();
+                if (st.InitialDisplaySize.Width <= 0 || st.InitialDisplaySize.Height <= 0)
+                    st.InitialDisplaySize = FitThumbnailSize(pb.Image.Size, 480, 360);
+                st.Zoom = Math.Min(20f, st.Zoom * 1.1f);
+                ApplyZoom();
+            };
+            btnZoomOut.Click += (_, __) =>
+            {
+                if (pb.Image == null) return;
+                var st = GetState();
+                if (st.InitialDisplaySize.Width <= 0 || st.InitialDisplaySize.Height <= 0)
+                    st.InitialDisplaySize = FitThumbnailSize(pb.Image.Size, 480, 360);
+                st.Zoom = Math.Max(0.05f, st.Zoom / 1.1f);
+                ApplyZoom();
             };
 
             scroll.MouseWheel += (_, e) =>
@@ -738,8 +805,8 @@ namespace EncryptTools.Ui
                 if ((Control.ModifierKeys & Keys.Control) == 0) return;
                 if (pb.Image == null) return;
                 var st = GetState();
-                if (st.BaseSize.Width <= 0 || st.BaseSize.Height <= 0)
-                    st.BaseSize = pb.Image.Size;
+                if (st.InitialDisplaySize.Width <= 0 || st.InitialDisplaySize.Height <= 0)
+                    st.InitialDisplaySize = FitThumbnailSize(pb.Image.Size, 480, 360);
                 st.Zoom = e.Delta > 0 ? st.Zoom * 1.1f : st.Zoom / 1.1f;
                 st.Zoom = Math.Max(0.05f, Math.Min(20f, st.Zoom));
                 ApplyZoom();
@@ -805,7 +872,7 @@ namespace EncryptTools.Ui
             }
         }
 
-        private static void SetComboDropDownWidth(ComboBox cb)
+        private static void SetComboDropDownWidth(ComboBox cb, int maxWidth = 140)
         {
             if (cb == null || cb.Items.Count == 0) return;
             int maxW = cb.Width;
@@ -820,9 +887,7 @@ namespace EncryptTools.Ui
                         if (w > maxW) maxW = w;
                     }
                 }
-                cb.DropDownWidth = Math.Max(maxW, 80);
-                if (maxW > cb.Width)
-                    cb.Width = Math.Min(maxW, 400);
+                cb.DropDownWidth = Math.Min(Math.Max(maxW, 80), maxWidth);
             }
             catch { }
         }

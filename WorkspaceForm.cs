@@ -323,8 +323,9 @@ namespace EncryptTools
             var btnSelectFolder = new Button { Text = "选择文件夹", AutoSize = true, Margin = new Padding(0, 0, 6, 2) };
             var lblDragHint = new Label { Text = "可拖拽", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 6, 12, 0) };
 
+            const int comboMaxW = 140;
             var lblAlgo = new Label { Text = "算法:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
-            var cbAlgo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 2), MinimumSize = new Size(120, 0) };
+            var cbAlgo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 2), MinimumSize = new Size(100, 0), MaximumSize = new Size(comboMaxW, 0), Width = 120 };
             // 算法列表：AES-256-GCM 仅当本机已安装 .NET 8 时在下拉框中展示（可用 GcmRunner 调用）；否则不展示，其余算法兼容 .NET 4.6
             var algoItems = new List<string>();
             if (RuntimeHelper.IsNet8InstalledOnMachine)
@@ -334,14 +335,16 @@ namespace EncryptTools
             algoItems.Add("SM4");
             cbAlgo.Items.AddRange(algoItems.ToArray());
             cbAlgo.SelectedIndex = 0;
-            SetComboDropDownWidth(cbAlgo);
+            SetComboDropDownWidth(cbAlgo, comboMaxW);
             var lblSuffix = new Label { Text = "后缀:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
             // 允许下拉选择常用后缀，也支持手动输入自定义后缀
             var cbSuffix = new ComboBox
             {
                 DropDownStyle = ComboBoxStyle.DropDown,
                 Margin = new Padding(2, 2, 8, 2),
-                MinimumSize = new Size(70, 0)
+                MinimumSize = new Size(70, 0),
+                MaximumSize = new Size(comboMaxW, 0),
+                Width = 80
             };
             // 常用后缀列表
             cbSuffix.Items.AddRange(new object[]
@@ -355,10 +358,10 @@ namespace EncryptTools
                 ".secure"
             });
             cbSuffix.SelectedItem = ".enc1";
-            SetComboDropDownWidth(cbSuffix);
+            SetComboDropDownWidth(cbSuffix, comboMaxW);
             var lblPwd = new Label { Text = "密码文件:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
-            var cbPwdFile = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 2), MinimumSize = new Size(140, 0) };
-            cbPwdFile.DropDown += (_, __) => SetComboDropDownWidth(cbPwdFile);
+            var cbPwdFile = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 2), MinimumSize = new Size(100, 0), MaximumSize = new Size(comboMaxW, 0), Width = 120 };
+            cbPwdFile.DropDown += (_, __) => SetComboDropDownWidth(cbPwdFile, comboMaxW);
             RefreshFileWorkspacePwdCombo(cbPwdFile);
             var chkSelfExe = new CheckBox { Text = "加密为可运行的exe", AutoSize = true, Margin = new Padding(8, 4, 4, 2) };
             var chkOverwrite = new CheckBox { Text = "覆盖原文件", AutoSize = true, Margin = new Padding(0, 4, 4, 2), Checked = true };
@@ -446,6 +449,16 @@ namespace EncryptTools
                 CbSuffix = cbSuffix
             };
             tab.Tag = ctx;
+
+            var fileComboToolTip = new ToolTip { AutoPopDelay = 8000 };
+            void SetComboTooltip(ComboBox c) { fileComboToolTip.SetToolTip(c, c.SelectedItem?.ToString() ?? c.Text ?? ""); }
+            SetComboTooltip(cbAlgo);
+            SetComboTooltip(cbSuffix);
+            SetComboTooltip(cbPwdFile);
+            cbAlgo.SelectedIndexChanged += (_, __) => SetComboTooltip(cbAlgo);
+            cbSuffix.SelectedIndexChanged += (_, __) => SetComboTooltip(cbSuffix);
+            cbSuffix.TextChanged += (_, __) => SetComboTooltip(cbSuffix);
+            cbPwdFile.SelectedIndexChanged += (_, __) => SetComboTooltip(cbPwdFile);
 
             void UpdateEncryptDecryptEnabled()
             {
@@ -538,16 +551,22 @@ namespace EncryptTools
             };
             var btnPaste = new Button { Text = "从剪贴板粘贴", AutoSize = true, Margin = new Padding(0, 0, 6, 4) };
             var btnClear = new Button { Text = "清空", AutoSize = true, Margin = new Padding(0, 0, 6, 4) };
+            const int comboMaxW = 140;
             var lblMode = new Label { Text = "加密模式:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
-            var cbMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 4), MinimumSize = new Size(100, 0) };
+            var cbMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 4), MinimumSize = new Size(100, 0), MaximumSize = new Size(comboMaxW, 0), Width = 120 };
             cbMode.Items.AddRange(new object[] { "对称（AES）", "非对称（RSA）", "混合（PGP）" });
             cbMode.SelectedIndex = 0;
-            SetComboDropDownWidth(cbMode);
+            SetComboDropDownWidth(cbMode, comboMaxW);
             var lblEnc = new Label { Text = "编码输出:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
-            var cbEncoding = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 4), MinimumSize = new Size(80, 0) };
+            var cbEncoding = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 4), MinimumSize = new Size(80, 0), MaximumSize = new Size(comboMaxW, 0), Width = 90 };
             cbEncoding.Items.AddRange(new object[] { "Base64", "Hex", "URL编码", "Binary" });
             cbEncoding.SelectedIndex = 0;
-            SetComboDropDownWidth(cbEncoding);
+            SetComboDropDownWidth(cbEncoding, comboMaxW);
+            var strComboToolTip = new ToolTip { AutoPopDelay = 8000 };
+            strComboToolTip.SetToolTip(cbMode, cbMode.SelectedItem?.ToString() ?? "");
+            strComboToolTip.SetToolTip(cbEncoding, cbEncoding.SelectedItem?.ToString() ?? "");
+            cbMode.SelectedIndexChanged += (_, __) => strComboToolTip.SetToolTip(cbMode, cbMode.SelectedItem?.ToString() ?? "");
+            cbEncoding.SelectedIndexChanged += (_, __) => strComboToolTip.SetToolTip(cbEncoding, cbEncoding.SelectedItem?.ToString() ?? "");
             var btnEncrypt = new Button { Text = "加密", BackColor = Color.RoyalBlue, ForeColor = Color.White, AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
             var btnDecrypt = new Button { Text = "解密", BackColor = Color.SeaGreen, ForeColor = Color.White, AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
             var btnCopyOut = new Button { Text = "复制输出", AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
@@ -964,7 +983,7 @@ namespace EncryptTools
             return "pwd";
         }
 
-        private static void SetComboDropDownWidth(ComboBox cb)
+        private static void SetComboDropDownWidth(ComboBox cb, int maxWidth = 140)
         {
             if (cb == null || cb.Items.Count == 0) return;
             int maxW = cb.Width;
@@ -979,9 +998,7 @@ namespace EncryptTools
                         if (w > maxW) maxW = w;
                     }
                 }
-                cb.DropDownWidth = Math.Max(maxW, 80);
-                if (maxW > cb.Width)
-                    cb.Width = Math.Min(maxW, 400);
+                cb.DropDownWidth = Math.Min(Math.Max(maxW, 80), maxWidth);
             }
             catch { }
         }
