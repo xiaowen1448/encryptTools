@@ -1545,6 +1545,10 @@ namespace EncryptTools
                             var tmpEnc = Path.Combine(Path.GetTempPath(), "encryptTools_pack_" + Guid.NewGuid().ToString("N") + ".enc");
                             try
                             {
+                                // 封装 EXE 的进度：以“生成临时加密文件 tmpEnc”为准，按读取字节实时更新 oneFile 的进度
+                                var packProgress = CreateFileListProgress(ctx.FileListView, oneFile, isDecrypt: false);
+                                UpdateFileListProgress(ctx.FileListView, oneFile, 0);
+
                                 // 封装 exe 时若非 .NET 8 环境则一律使用 CBC，确保打包后的 exe 在本机可直接解密
                                 CryptoAlgorithm packAlgo = RuntimeHelper.IsNet8OrHigher ? algorithm : CryptoAlgorithm.AesCbc;
                                 if (packAlgo == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher && RuntimeHelper.IsNet8InstalledOnMachine)
@@ -1553,15 +1557,26 @@ namespace EncryptTools
 
                                 if (packUseGcm)
                                 {
-                                    bool ok = await GcmRunner.EncryptAsync(oneFile, tmpEnc, password, null, m => log($"[{DateTime.Now:HH:mm:ss}] {m}")).ConfigureAwait(false);
+                                    // GCM 走外部进程：用输出文件增长轮询模拟进度
+                                    bool ok = await GcmRunner.EncryptAsync(oneFile, tmpEnc, password, packProgress, m => log($"[{DateTime.Now:HH:mm:ss}] {m}")).ConfigureAwait(false);
                                     if (!ok) { log($"[{DateTime.Now:HH:mm:ss}] 封装EXE失败: GCM 加密失败"); continue; }
                                 }
                                 else
                                 {
                                     var crypto = new CryptoService();
-                                    await crypto.EncryptFileAsync(oneFile, tmpEnc, packAlgo, password, 200_000, 256, null, CancellationToken.None);
+                                    long fileLen = 0;
+                                    try { fileLen = new FileInfo(oneFile).Length; } catch { }
+                                    long processed = 0;
+                                    int lastPct = -1;
+                                    await crypto.EncryptFileAsync(oneFile, tmpEnc, packAlgo, password, 200_000, 256, new Progress<long>(bytes =>
+                                    {
+                                        processed += bytes;
+                                        int pct = fileLen <= 0 ? 0 : Math.Min(100, (int)((double)processed / fileLen * 100));
+                                        if (pct != lastPct) { lastPct = pct; packProgress.Report(pct / 100.0); }
+                                    }), CancellationToken.None);
                                 }
                                 log($"[{DateTime.Now:HH:mm:ss}] 已生成临时加密文件: {tmpEnc}");
+                                UpdateFileListProgress(ctx.FileListView, oneFile, 100);
 
                                 var encBytes = File.ReadAllBytes(tmpEnc);
                                 var meta = new ExePayload.PayloadMeta { Type = "file", Note = "encryptTools packed payload" };
