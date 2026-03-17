@@ -52,7 +52,7 @@ namespace EncryptTools
             _cbMode.SelectedIndex = 0;
             rowMode.Controls.Add(_cbMode, 1, 0);
             _txtValue = new TextBox { Dock = DockStyle.Left, Width = 100
-#if !NET48
+#if !NET46 && !NET48 && !NET461
                 , PlaceholderText = "输入密码"
 #endif
             };
@@ -85,7 +85,7 @@ namespace EncryptTools
             _btnBrowsePwd.Visible = isPwdFile;
             _txtValue.ReadOnly = isPwdFile;
             _txtValue.UseSystemPasswordChar = !isPwdFile;
-#if !NET48
+#if !NET46 && !NET48 && !NET461
             _txtValue.PlaceholderText = isPwdFile ? "请选择密码文件(.pwd)" : "输入密码";
 #endif
             if (isPwdFile)

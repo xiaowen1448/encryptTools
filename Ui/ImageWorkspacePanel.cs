@@ -980,8 +980,12 @@ namespace EncryptTools.Ui
             {
                 var salt = Convert.FromBase64String(saltBase64 ?? "");
                 if (salt.Length < 8) salt = Encoding.UTF8.GetBytes("IconOverlayBlocks");
+#if NET46 || NET461
+                var key = EncryptTools.Compat.DeriveKeyPbkdf2Sha256(password, salt, 10000, 32);
+#else
                 using var kdf = new Rfc2898DeriveBytes(password, salt, 10000, HashAlgorithmName.SHA256);
                 var key = kdf.GetBytes(32);
+#endif
                 using var aes = Aes.Create();
                 aes.Key = key;
                 aes.GenerateIV();
@@ -1003,8 +1007,12 @@ namespace EncryptTools.Ui
             {
                 var salt = Convert.FromBase64String(saltBase64 ?? "");
                 if (salt.Length < 8) salt = Encoding.UTF8.GetBytes("IconOverlayBlocks");
+#if NET46 || NET461
+                var key = EncryptTools.Compat.DeriveKeyPbkdf2Sha256(password, salt, 10000, 32);
+#else
                 using var kdf = new Rfc2898DeriveBytes(password, salt, 10000, HashAlgorithmName.SHA256);
                 var key = kdf.GetBytes(32);
+#endif
                 using var aes = Aes.Create();
                 aes.Key = key;
                 var iv = new byte[16];
@@ -1101,8 +1109,12 @@ namespace EncryptTools.Ui
         private static byte[] DeriveKey(string password, ImageEffectOptions options, int keyLen)
         {
             var salt = Convert.FromBase64String(options.SaltBase64);
+#if NET46 || NET461
+            return EncryptTools.Compat.DeriveKeyPbkdf2Sha256(password, salt, options.Iterations, keyLen);
+#else
             using var kdf = new Rfc2898DeriveBytes(password, salt, options.Iterations, HashAlgorithmName.SHA256);
             return kdf.GetBytes(keyLen);
+#endif
         }
 
         private static Bitmap ApplyPermutation(Bitmap bmp, ImageEffectOptions options, string? password, bool encrypt)
@@ -1194,18 +1206,22 @@ namespace EncryptTools.Ui
                 System.Runtime.InteropServices.Marshal.Copy(data.Scan0, buf, 0, len);
 
                 using var hmac = new HMACSHA256(key);
-                Span<byte> counter = stackalloc byte[8];
+#if NET46 || NET48
+                var counter = new byte[8];
+#endif
                 ulong ctr = 0;
                 int offset = 0;
                 while (offset < len)
                 {
-#if NET48
+#if NET46 || NET48
                     var ctrBytes = BitConverter.GetBytes(ctr++);
                     for (int i = 0; i < 8; i++) counter[i] = ctrBytes[i];
+                    var mac = hmac.ComputeHash(counter);
 #else
-                    BitConverter.TryWriteBytes(counter, ctr++);
+                    Span<byte> counterSpan = stackalloc byte[8];
+                    BitConverter.TryWriteBytes(counterSpan, ctr++);
+                    var mac = hmac.ComputeHash(counterSpan.ToArray());
 #endif
-                    var mac = hmac.ComputeHash(counter.ToArray());
                     int take = Math.Min(mac.Length, len - offset);
                     for (int i = 0; i < take; i++)
                         buf[offset + i] ^= mac[i];

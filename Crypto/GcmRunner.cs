@@ -59,6 +59,84 @@ namespace EncryptTools
         }
 
         /// <summary>
+        /// 使用 GcmCli 解密 .pwd 文件（GCM 格式）。仅在本机已安装 .NET 8 且存在 GcmCli 时可用。返回密码或 null。
+        /// </summary>
+        public static string DecryptPasswordFile(string pwdFilePath)
+        {
+            if (string.IsNullOrEmpty(pwdFilePath) || !File.Exists(pwdFilePath))
+                return null;
+            string cliDir = GetGcmCliDir();
+            if (string.IsNullOrEmpty(cliDir))
+                return null;
+            string dllPath = Path.Combine(cliDir, DllName);
+            try
+            {
+                var psi = new ProcessStartInfo("dotnet")
+                {
+                    Arguments = "\"" + dllPath + "\" --decrypt-pwd --input \"" + pwdFilePath + "\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WorkingDirectory = cliDir,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+                using (var p = Process.Start(psi))
+                {
+                    if (p == null) return null;
+                    string stdout = p.StandardOutput.ReadToEnd();
+                    p.WaitForExit(10000);
+                    return p.ExitCode == 0 ? stdout?.Trim() : null;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 使用 GcmCli 生成旧版 .pwd（无格式字节的 AES-GCM）：Key(32)+Nonce(12)+Tag(16)+Ciphertext。
+        /// 仅在本机已安装 .NET 8 且存在 GcmCli 时可用。
+        /// </summary>
+        public static bool EncryptPasswordFile(string pwdFilePath, string password)
+        {
+            if (string.IsNullOrEmpty(pwdFilePath)) return false;
+            string cliDir = GetGcmCliDir();
+            if (string.IsNullOrEmpty(cliDir)) return false;
+            string dllPath = Path.Combine(cliDir, DllName);
+            string pwdTemp = Path.Combine(Path.GetTempPath(), "encryptTools_pwd_" + Guid.NewGuid().ToString("N") + ".tmp");
+            bool isTempDir = cliDir.IndexOf(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase) >= 0;
+            try
+            {
+                File.WriteAllText(pwdTemp, password ?? "");
+                var psi = new ProcessStartInfo("dotnet")
+                {
+                    Arguments = "\"" + dllPath + "\" --encrypt-pwd --output \"" + pwdFilePath + "\" --password-file \"" + pwdTemp + "\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WorkingDirectory = cliDir,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+                using (var p = Process.Start(psi))
+                {
+                    if (p == null) return false;
+                    p.WaitForExit(15000);
+                    return p.ExitCode == 0;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                try { if (File.Exists(pwdTemp)) File.Delete(pwdTemp); } catch { }
+                if (isTempDir) try { Directory.Delete(cliDir, true); } catch { }
+            }
+        }
+
+        /// <summary>
         /// 使用 GcmCli 加密。返回 true 表示成功，false 表示未找到或执行失败。
         /// </summary>
         public static async Task<bool> EncryptAsync(string inputPath, string outputPath, string password, Action<string> log = null)

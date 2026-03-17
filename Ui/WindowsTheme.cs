@@ -8,7 +8,7 @@ namespace EncryptTools.Ui
     {
         public static bool IsDarkMode()
         {
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            if (!EncryptTools.Compat.IsWindows())
                 return false;
 
             try

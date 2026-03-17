@@ -543,7 +543,7 @@ namespace EncryptTools
             _options.Log?.Invoke($"源文件被占用：{ex.Message}");
             try
             {
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                if (Compat.IsWindows())
                 {
                     if (WindowsFileLockKiller.TryKillLockingProcesses(file, _options.Log, out var killed))
                     {
@@ -603,7 +603,7 @@ namespace EncryptTools
             {
                 // 权限不足/系统保护：也尝试结束占用进程再删一次
                 _options.Log?.Invoke($"删除{label}被拒绝访问: {file} - {uaEx.Message}");
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                if (Compat.IsWindows())
                 {
                     try { WindowsFileLockKiller.TryKillLockingProcesses(file, _options.Log, out _); } catch { }
                 }

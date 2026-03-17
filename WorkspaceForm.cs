@@ -40,6 +40,7 @@ namespace EncryptTools
             public ListView? FileListView;
             public CheckBox? ChkPackExe;
             public CheckBox? ChkOverwrite;
+            public CheckBox? ChkRandomFileName;
             public TextBox? TxtPassword;
             public ComboBox? CbPwdFile;
             public ComboBox? CbAlgo;
@@ -324,9 +325,9 @@ namespace EncryptTools
 
             var lblAlgo = new Label { Text = "算法:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
             var cbAlgo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 2), MinimumSize = new Size(120, 0) };
-            // 算法列表：AES-256-GCM 仅在检测到 .NET 8 环境时才可选，其他算法完全兼容 .NET 4.6/4.8
+            // 算法列表：AES-256-GCM 仅当本机已安装 .NET 8 时在下拉框中展示（可用 GcmRunner 调用）；否则不展示，其余算法兼容 .NET 4.6
             var algoItems = new List<string>();
-            if (RuntimeHelper.IsNet8OrHigher || RuntimeHelper.IsNet8InstalledOnMachine)
+            if (RuntimeHelper.IsNet8InstalledOnMachine)
                 algoItems.Add("AES-256-GCM");
             algoItems.Add("AES-128-CBC");
             algoItems.Add("ChaCha20-Poly1305");
@@ -360,7 +361,8 @@ namespace EncryptTools
             cbPwdFile.DropDown += (_, __) => SetComboDropDownWidth(cbPwdFile);
             RefreshFileWorkspacePwdCombo(cbPwdFile);
             var chkSelfExe = new CheckBox { Text = "加密为可运行的exe", AutoSize = true, Margin = new Padding(8, 4, 4, 2) };
-            var chkOverwrite = new CheckBox { Text = "覆盖原文件", AutoSize = true, Margin = new Padding(0, 4, 12, 2), Checked = true };
+            var chkOverwrite = new CheckBox { Text = "覆盖原文件", AutoSize = true, Margin = new Padding(0, 4, 4, 2), Checked = true };
+            var chkRandomFileName = new CheckBox { Text = "随机文件名", AutoSize = true, Margin = new Padding(0, 4, 12, 2), Checked = false };
             var btnEncrypt = new Button { Text = "执行加密", BackColor = Color.RoyalBlue, ForeColor = Color.White, AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
             var btnDecrypt = new Button { Text = "执行解密", BackColor = Color.SeaGreen, ForeColor = Color.White, AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
             var btnClear = new Button { Text = "清空", AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
@@ -376,6 +378,7 @@ namespace EncryptTools
             toolbar.Controls.Add(cbPwdFile);
             toolbar.Controls.Add(chkSelfExe);
             toolbar.Controls.Add(chkOverwrite);
+            toolbar.Controls.Add(chkRandomFileName);
             toolbar.Controls.Add(btnEncrypt);
             toolbar.Controls.Add(btnDecrypt);
             toolbar.Controls.Add(btnClear);
@@ -436,6 +439,7 @@ namespace EncryptTools
                 FileListView = lvFiles,
                 ChkPackExe = chkSelfExe,
                 ChkOverwrite = chkOverwrite,
+                ChkRandomFileName = chkRandomFileName,
                 TxtPassword = null,
                 CbPwdFile = cbPwdFile,
                 CbAlgo = cbAlgo,
@@ -569,7 +573,9 @@ namespace EncryptTools
             var leftPanel = new Panel { Dock = DockStyle.Fill };
             var txtIn = new TextBox { Multiline = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical };
 #if !NET48
+            #if !NET46 && !NET48 && !NET461
             txtIn.PlaceholderText = "输入明文或密文";
+#endif
 #endif
             var cbAutoDetect = new CheckBox { Text = "自动检测格式（Base64/Hex/JSON等）", Dock = DockStyle.Bottom, AutoSize = true };
             leftPanel.Controls.Add(txtIn);
@@ -577,7 +583,7 @@ namespace EncryptTools
 
             var rightPanel = new Panel { Dock = DockStyle.Fill };
             var txtOut = new TextBox { Multiline = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical, ReadOnly = true };
-#if !NET48
+#if !NET46 && !NET48 && !NET461
             txtOut.PlaceholderText = "输出结果";
 #endif
             var btnSave = new Button { Text = "保存为文件", Dock = DockStyle.Bottom, Height = 28 };
@@ -1419,7 +1425,7 @@ namespace EncryptTools
 
                                 log($"[{DateTime.Now:HH:mm:ss}] 已写入封装EXE: {outExe}");
                                 UpdateFileListItemPathStatus(ctx.FileListView, oneFile, outExe, "已封装EXE");
-                                if (inPlace && !isDir)
+                                if (inPlace)
                                 {
                                     try
                                     {
@@ -1476,7 +1482,7 @@ namespace EncryptTools
                         OutputRoot = outDir,
                         InPlace = inPlace,
                         Recursive = isDir,
-                        RandomizeFileName = false,
+                        RandomizeFileName = ctx.ChkRandomFileName?.Checked ?? false,
                         Algorithm = algorithm,
                         Password = password,
                         Iterations = 200_000,
@@ -1796,7 +1802,7 @@ namespace EncryptTools
                         OutputRoot = outDir,
                         InPlace = inPlace,
                         Recursive = isDir,
-                        RandomizeFileName = false,
+                        RandomizeFileName = ctx.ChkRandomFileName?.Checked ?? false,
                         Algorithm = CryptoAlgorithm.AesCbc,
                         Password = password,
                         Iterations = 200_000,

@@ -4,10 +4,6 @@ VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EncryptTools", "EncryptTools.csproj", "{9CCE430A-C573-4728-EBE4-443D27A39E80}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EncryptTools.FrameworkDependent", "EncryptTools.FrameworkDependent.csproj", "{9835040D-86E2-256E-519E-3752D8B6BA47}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EncryptTools.SelfContained", "EncryptTools.SelfContained.csproj", "{04F0AD12-838F-43B4-997A-C917FB9566AC}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,14 +14,6 @@ Global
 		{9CCE430A-C573-4728-EBE4-443D27A39E80}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9CCE430A-C573-4728-EBE4-443D27A39E80}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9CCE430A-C573-4728-EBE4-443D27A39E80}.Release|Any CPU.Build.0 = Release|Any CPU
-		{9835040D-86E2-256E-519E-3752D8B6BA47}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{9835040D-86E2-256E-519E-3752D8B6BA47}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{9835040D-86E2-256E-519E-3752D8B6BA47}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{9835040D-86E2-256E-519E-3752D8B6BA47}.Release|Any CPU.Build.0 = Release|Any CPU
-		{04F0AD12-838F-43B4-997A-C917FB9566AC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{04F0AD12-838F-43B4-997A-C917FB9566AC}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{04F0AD12-838F-43B4-997A-C917FB9566AC}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{04F0AD12-838F-43B4-997A-C917FB9566AC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

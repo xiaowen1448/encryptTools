@@ -87,7 +87,11 @@ namespace EncryptTools
             var salt = RandomBytes(16);
             byte encryptType = algorithm == CryptoAlgorithm.AesGcm ? EncryptTypeGcm : EncryptTypeCbc;
 
+#if NET46
+            var fileOptions = FileOptions.WriteThrough;
+#else
             var fileOptions = FileOptions.SequentialScan | FileOptions.WriteThrough;
+#endif
             using var outFs = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize, fileOptions);
             using var bw = new BinaryWriter(outFs);
 
@@ -114,7 +118,7 @@ namespace EncryptTools
                     await EncryptAesCbcAsync(inputPath, outFs, password, salt, iterations, aesKeySizeBits, progress, ct);
                     break;
                 case CryptoAlgorithm.AesGcm:
-#if NET48
+#if NET46 || NET48 || NET461
                     throw new NotSupportedException(RuntimeHelper.GetAesGcmRequirementMessage());
 #else
                     await EncryptAesGcmAsync(inputPath, outFs, password, salt, iterations, aesKeySizeBits, progress, ct);
@@ -191,7 +195,11 @@ namespace EncryptTools
             IProgress<long>? progress,
             CancellationToken ct)
         {
+#if NET46 || NET48 || NET461
+            var fileOptions = FileOptions.None;
+#else
             var fileOptions = FileOptions.SequentialScan;
+#endif
             using var inFs = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, fileOptions);
             using var br = new BinaryReader(inFs);
             byte[] header = br.ReadBytes(HeaderSize);
@@ -216,8 +224,11 @@ namespace EncryptTools
             if (nameLen > 0 && nameLen < 4096)
                 originalFileName = System.Text.Encoding.UTF8.GetString(br.ReadBytes(nameLen));
 
-            // 优化输出FileStream配置
+#if NET46 || NET48 || NET461
+            var outFileOptions = FileOptions.WriteThrough;
+#else
             var outFileOptions = FileOptions.SequentialScan | FileOptions.WriteThrough;
+#endif
             using var outFs = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize, outFileOptions);
 
             switch (alg)
@@ -226,7 +237,7 @@ namespace EncryptTools
                     await DecryptAesCbcAsync(inFs, outFs, password, salt, iterations, aesKeySizeBits, progress, ct);
                     break;
                 case CryptoAlgorithm.AesGcm:
-#if NET48
+#if NET46 || NET48 || NET461
                     throw new NotSupportedException(RuntimeHelper.GetAesGcmRequirementMessage());
 #else
                     await DecryptAesGcmAsync(inFs, outFs, password, salt, iterations, aesKeySizeBits, progress, ct);
@@ -263,9 +274,11 @@ namespace EncryptTools
                 return cache.Key;
             }
 
-            // 计算新密钥（.NET 4.7.2+ 支持 HashAlgorithmName；更早版本用兼容方式）
+            // 计算新密钥（.NET 4.7.2+ 支持 HashAlgorithmName；.NET 4.6 用 PBKDF2-SHA256 兼容实现）
             byte[] key;
-#if NET48
+#if NET46
+            key = DeriveKeyPbkdf2Sha256(password, salt, iterations, keySize);
+#elif NET48
             try
             {
                 using (var kdf = new Rfc2898DeriveBytes(password, salt, iterations, HashAlgorithmName.SHA256))
@@ -273,8 +286,7 @@ namespace EncryptTools
             }
             catch (MissingMethodException)
             {
-                using (var kdf = new Rfc2898DeriveBytes(password, salt, iterations))
-                    key = kdf.GetBytes(keySize);
+                key = Compat.DeriveKeyPbkdf2Sha256(password, salt, iterations, keySize);
             }
 #else
             using (var kdf = new Rfc2898DeriveBytes(password, salt, iterations, HashAlgorithmName.SHA256))
@@ -292,6 +304,38 @@ namespace EncryptTools
             return key;
         }
 
+#if NET46
+        private static byte[] DeriveKeyPbkdf2Sha256(string password, byte[] salt, int iterations, int keySizeBytes)
+        {
+            var passwordBytes = Encoding.UTF8.GetBytes(password);
+            using (var hmac = new HMACSHA256(passwordBytes))
+            {
+                var blockCount = (keySizeBytes + 31) / 32;
+                var result = new List<byte>();
+                for (int i = 1; i <= blockCount; i++)
+                {
+                    var block = new byte[salt.Length + 4];
+                    Buffer.BlockCopy(salt, 0, block, 0, salt.Length);
+                    block[salt.Length] = (byte)(i >> 24);
+                    block[salt.Length + 1] = (byte)(i >> 16);
+                    block[salt.Length + 2] = (byte)(i >> 8);
+                    block[salt.Length + 3] = (byte)i;
+                    var u = hmac.ComputeHash(block);
+                    var t = (byte[])u.Clone();
+                    for (int j = 1; j < iterations; j++)
+                    {
+                        u = hmac.ComputeHash(u);
+                        for (int k = 0; k < t.Length; k++) t[k] ^= u[k];
+                    }
+                    result.AddRange(t);
+                }
+                var key = new byte[keySizeBytes];
+                for (int i = 0; i < keySizeBytes; i++) key[i] = result[i];
+                return key;
+            }
+        }
+#endif
+
         private static bool ArraysEqual(byte[] a, byte[] b)
         {
             if (a == null || b == null) return a == b;
@@ -306,7 +350,13 @@ namespace EncryptTools
         private async Task EncryptAesCbcAsync(string inputPath, FileStream outFs, string password, byte[] salt, int iterations, int keySizeBits, IProgress<long>? progress, CancellationToken ct)
         {
             var iv = RandomBytes(16);
+#if NET46 || NET48 || NET461
+            using (var wrapBw = new LeaveOpenStream(outFs))
+            using (var bw = new BinaryWriter(wrapBw, System.Text.Encoding.UTF8))
+#else
             using var bw = new BinaryWriter(outFs, System.Text.Encoding.UTF8, leaveOpen: true);
+#endif
+            {
             bw.Write(iv.Length);
             bw.Write(iv);
 
@@ -317,15 +367,31 @@ namespace EncryptTools
                 aes.IV = iv;
                 aes.Mode = CipherMode.CBC;
                 aes.Padding = PaddingMode.PKCS7;
+#if NET46 || NET48 || NET461
+                using (var wrap = new LeaveOpenStream(outFs))
+                using (var crypto = new CryptoStream(wrap, aes.CreateEncryptor(), CryptoStreamMode.Write))
+                {
+                    await CopyWithProgressAsync(inputPath, crypto, progress, ct);
+                    await crypto.FlushAsync(ct);
+                }
+#else
                 using var crypto = new CryptoStream(outFs, aes.CreateEncryptor(), CryptoStreamMode.Write, leaveOpen: true);
                 await CopyWithProgressAsync(inputPath, crypto, progress, ct);
                 await crypto.FlushAsync(ct);
+#endif
+            }
             }
         }
 
         private async Task DecryptAesCbcAsync(FileStream inFs, FileStream outFs, string password, byte[] salt, int iterations, int keySizeBits, IProgress<long>? progress, CancellationToken ct)
         {
+#if NET46 || NET48 || NET461
+            using (var wrapBr = new LeaveOpenStream(inFs))
+            using (var br = new BinaryReader(wrapBr, System.Text.Encoding.UTF8))
+#else
             using var br = new BinaryReader(inFs, System.Text.Encoding.UTF8, leaveOpen: true);
+#endif
+            {
             var ivLen = br.ReadInt32();
             var iv = br.ReadBytes(ivLen);
             var key = DeriveKey(password, salt, iterations, keySizeBits / 8);
@@ -335,15 +401,30 @@ namespace EncryptTools
                 aes.IV = iv;
                 aes.Mode = CipherMode.CBC;
                 aes.Padding = PaddingMode.PKCS7;
+#if NET46 || NET48 || NET461
+                using (var wrap = new LeaveOpenStream(inFs))
+                using (var crypto = new CryptoStream(wrap, aes.CreateDecryptor(), CryptoStreamMode.Read))
+                {
+                    await Compat.CopyToAsync(crypto, outFs, BufferSize, ct);
+                }
+#else
                 using var crypto = new CryptoStream(inFs, aes.CreateDecryptor(), CryptoStreamMode.Read, leaveOpen: true);
-                await crypto.CopyToAsync(outFs, BufferSize, ct);
+                await Compat.CopyToAsync(crypto, outFs, BufferSize, ct);
+#endif
+            }
             }
         }
 
         private async Task EncryptTripleDesAsync(string inputPath, FileStream outFs, string password, byte[] salt, int iterations, IProgress<long>? progress, CancellationToken ct)
         {
             var iv = RandomBytes(8);
+#if NET46 || NET48 || NET461
+            using (var wrapBw = new LeaveOpenStream(outFs))
+            using (var bw = new BinaryWriter(wrapBw, System.Text.Encoding.UTF8))
+#else
             using var bw = new BinaryWriter(outFs, System.Text.Encoding.UTF8, leaveOpen: true);
+#endif
+            {
             bw.Write(iv.Length);
             bw.Write(iv);
 
@@ -354,15 +435,31 @@ namespace EncryptTools
                 tdes.IV = iv;
                 tdes.Mode = CipherMode.CBC;
                 tdes.Padding = PaddingMode.PKCS7;
+#if NET46 || NET48 || NET461
+                using (var wrap = new LeaveOpenStream(outFs))
+                using (var crypto = new CryptoStream(wrap, tdes.CreateEncryptor(), CryptoStreamMode.Write))
+                {
+                    await CopyWithProgressAsync(inputPath, crypto, progress, ct);
+                    await crypto.FlushAsync(ct);
+                }
+#else
                 using var crypto = new CryptoStream(outFs, tdes.CreateEncryptor(), CryptoStreamMode.Write, leaveOpen: true);
                 await CopyWithProgressAsync(inputPath, crypto, progress, ct);
                 await crypto.FlushAsync(ct);
+#endif
+            }
             }
         }
 
         private async Task DecryptTripleDesAsync(FileStream inFs, FileStream outFs, string password, byte[] salt, int iterations, IProgress<long>? progress, CancellationToken ct)
         {
+#if NET46 || NET48 || NET461
+            using (var wrapBr = new LeaveOpenStream(inFs))
+            using (var br = new BinaryReader(wrapBr, System.Text.Encoding.UTF8))
+#else
             using var br = new BinaryReader(inFs, System.Text.Encoding.UTF8, leaveOpen: true);
+#endif
+            {
             var ivLen = br.ReadInt32();
             var iv = br.ReadBytes(ivLen);
             var key = DeriveKey(password, salt, iterations, 24);
@@ -372,12 +469,21 @@ namespace EncryptTools
                 tdes.IV = iv;
                 tdes.Mode = CipherMode.CBC;
                 tdes.Padding = PaddingMode.PKCS7;
+#if NET46 || NET48 || NET461
+                using (var wrap = new LeaveOpenStream(inFs))
+                using (var crypto = new CryptoStream(wrap, tdes.CreateDecryptor(), CryptoStreamMode.Read))
+                {
+                    await Compat.CopyToAsync(crypto, outFs, BufferSize, ct);
+                }
+#else
                 using var crypto = new CryptoStream(inFs, tdes.CreateDecryptor(), CryptoStreamMode.Read, leaveOpen: true);
-                await crypto.CopyToAsync(outFs, BufferSize, ct);
+                await Compat.CopyToAsync(crypto, outFs, BufferSize, ct);
+#endif
+            }
             }
         }
 
-#if !NET48
+#if !NET46 && !NET48
         private async Task EncryptAesGcmAsync(string inputPath, FileStream outFs, string password, byte[] salt, int iterations, int keySizeBits, IProgress<long>? progress, CancellationToken ct)
         {
             var key = DeriveKey(password, salt, iterations, keySizeBits / 8);
