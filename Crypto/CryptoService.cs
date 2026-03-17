@@ -51,6 +51,16 @@ namespace EncryptTools
         private const byte EncryptTypeGcm = 2;
 
         private const int BufferSize = 4 * 1024 * 1024; // 4MB缓冲区
+        /// <summary>进度按块上报的块大小（16KB），按读取文件大小实时计算百分比，避免 0% 直接跳到 100%。</summary>
+        private const int ProgressReportChunkSize = 16 * 1024;
+
+        /// <summary>将本次读取字节数按小块多次上报，便于 UI 及时刷新进度百分比。</summary>
+        private static void ReportProgressChunked(IProgress<long>? progress, long bytesRead)
+        {
+            if (progress == null || bytesRead <= 0) return;
+            for (long remaining = bytesRead; remaining > 0; remaining -= ProgressReportChunkSize)
+                progress.Report(Math.Min(ProgressReportChunkSize, remaining));
+        }
 
         // 延迟初始化，避免类型初始化时加载 System.Buffers 或 ValueTuple 导致异常
         private static readonly Lazy<ThreadLocal<KeyCacheEntry>> KeyCacheLazy =
@@ -405,11 +415,11 @@ namespace EncryptTools
                 using (var wrap = new LeaveOpenStream(inFs))
                 using (var crypto = new CryptoStream(wrap, aes.CreateDecryptor(), CryptoStreamMode.Read))
                 {
-                    await Compat.CopyToAsync(crypto, outFs, BufferSize, ct);
+                    await CopyStreamToStreamWithProgressAsync(crypto, outFs, progress, ct);
                 }
 #else
                 using var crypto = new CryptoStream(inFs, aes.CreateDecryptor(), CryptoStreamMode.Read, leaveOpen: true);
-                await Compat.CopyToAsync(crypto, outFs, BufferSize, ct);
+                await CopyStreamToStreamWithProgressAsync(crypto, outFs, progress, ct);
 #endif
             }
             }
@@ -473,11 +483,11 @@ namespace EncryptTools
                 using (var wrap = new LeaveOpenStream(inFs))
                 using (var crypto = new CryptoStream(wrap, tdes.CreateDecryptor(), CryptoStreamMode.Read))
                 {
-                    await Compat.CopyToAsync(crypto, outFs, BufferSize, ct);
+                    await CopyStreamToStreamWithProgressAsync(crypto, outFs, progress, ct);
                 }
 #else
                 using var crypto = new CryptoStream(inFs, tdes.CreateDecryptor(), CryptoStreamMode.Read, leaveOpen: true);
-                await Compat.CopyToAsync(crypto, outFs, BufferSize, ct);
+                await CopyStreamToStreamWithProgressAsync(crypto, outFs, progress, ct);
 #endif
             }
             }
@@ -516,7 +526,7 @@ namespace EncryptTools
                     await outFs.WriteAsync(tag, 0, tag.Length, ct);
                     
                     totalBytesRead += bytesRead;
-                    progress?.Report(totalBytesRead);
+                    ReportProgressChunked(progress, bytesRead);
                 }
             }
             finally
@@ -560,7 +570,7 @@ namespace EncryptTools
                     await outFs.WriteAsync(plaintext, 0, cipherLength, ct);
                     
                     totalBytesRead += cipherLength;
-                    progress?.Report(totalBytesRead);
+                    ReportProgressChunked(progress, cipherLength);
                 }
             }
             finally
@@ -614,7 +624,7 @@ namespace EncryptTools
                         if (bytesRead > 0)
                         {
                             await outStream.WriteAsync(buffer, 0, bytesRead, ct);
-                            progress?.Report(bytesRead);
+                            ReportProgressChunked(progress, bytesRead);
                         }
                     }
                     finally
@@ -683,7 +693,7 @@ namespace EncryptTools
                 while ((bytesRead = await inFs.ReadAsync(buffer, 0, BufferSize, ct)) > 0)
                 {
                     await outStream.WriteAsync(buffer, 0, bytesRead, ct);
-                    progress?.Report(bytesRead);
+                    ReportProgressChunked(progress, bytesRead);
                 }
             }
             finally
@@ -694,6 +704,26 @@ namespace EncryptTools
                 {
                     try { File.Delete(tempCopy); } catch { }
                 }
+            }
+        }
+
+        /// <summary>从 source 流复制到 destination 流，按块上报进度（每次 Report 为本次读取的字节数，增量）。</summary>
+        private async Task CopyStreamToStreamWithProgressAsync(Stream source, Stream destination, IProgress<long>? progress, CancellationToken ct)
+        {
+            var pool = GetBufferPool();
+            var buffer = pool.Rent(BufferSize);
+            try
+            {
+                int bytesRead;
+                while ((bytesRead = await source.ReadAsync(buffer, 0, BufferSize, ct)) > 0)
+                {
+                    await destination.WriteAsync(buffer, 0, bytesRead, ct);
+                    ReportProgressChunked(progress, bytesRead);
+                }
+            }
+            finally
+            {
+                pool.Return(buffer);
             }
         }
 
@@ -742,7 +772,7 @@ namespace EncryptTools
                     }
                     await outFs.WriteAsync(buffer, 0, bytesRead, ct);
                     total += bytesRead;
-                    progress?.Report(bytesRead);
+                    ReportProgressChunked(progress, bytesRead);
                 }
             }
             finally
@@ -769,7 +799,7 @@ namespace EncryptTools
                         keyIndex = (keyIndex + 1) % key.Length;
                     }
                     await outFs.WriteAsync(buffer, 0, bytesRead, ct);
-                    progress?.Report(bytesRead);
+                    ReportProgressChunked(progress, bytesRead);
                 }
             }
             finally

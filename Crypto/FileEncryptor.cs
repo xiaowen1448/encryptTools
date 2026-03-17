@@ -90,21 +90,25 @@ namespace EncryptTools
                 {
                     if (useGcmRunner)
                     {
-                        bool ok = await GcmRunner.EncryptAsync(file, outFile, _options.Password, _options.Log).ConfigureAwait(false);
+                        long currentFileLen = new FileInfo(file).Length;
+                        IProgress<double> gcmProgress = progress == null ? null : new GcmToOverallProgress(progress, () => processed, totalBytes, currentFileLen);
+                        bool ok = await GcmRunner.EncryptAsync(file, outFile, _options.Password, gcmProgress, _options.Log, ct).ConfigureAwait(false);
                         if (!ok)
                         {
                             _options.Log?.Invoke($"加密失败，跳过: {file}（GCM 执行失败，可改用 AES-128-CBC）");
                             continue;
                         }
-                        processed += new FileInfo(file).Length;
+                        processed += currentFileLen;
                         progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
                     }
                     else
                     {
+                        int lastPct = -1;
                         await _crypto.EncryptFileAsync(file, outFile, effectiveAlgo, _options.Password, _options.Iterations, _options.AesKeySizeBits, new Progress<long>(bytes =>
                         {
                             processed += bytes;
-                            progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
+                            int pct = totalBytes == 0 ? 0 : Math.Min(100, (int)((double)processed / totalBytes * 100));
+                            if (pct != lastPct) { lastPct = pct; progress?.Report(pct / 100.0); }
                         }), ct);
                     }
                 }
@@ -114,13 +118,23 @@ namespace EncryptTools
                     {
                         if (useGcmRunner)
                         {
-                            bool ok = await GcmRunner.EncryptAsync(file, outFile, _options.Password, _options.Log).ConfigureAwait(false);
+                            long retryFileLen = new FileInfo(file).Length;
+                            IProgress<double> gcmProgressRetry = progress == null ? null : new GcmToOverallProgress(progress, () => processed, totalBytes, retryFileLen);
+                            bool ok = await GcmRunner.EncryptAsync(file, outFile, _options.Password, gcmProgressRetry, _options.Log, ct).ConfigureAwait(false);
                             if (!ok) { _options.Log?.Invoke($"仍被占用或失败，跳过: {file}"); continue; }
-                            processed += new FileInfo(file).Length;
+                            processed += retryFileLen;
                             progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
                         }
                         else
-                            await _crypto.EncryptFileAsync(file, outFile, effectiveAlgo, _options.Password, _options.Iterations, _options.AesKeySizeBits, new Progress<long>(bytes => { processed += bytes; progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes); }), ct);
+                        {
+                            int lastPctRetry = -1;
+                            await _crypto.EncryptFileAsync(file, outFile, effectiveAlgo, _options.Password, _options.Iterations, _options.AesKeySizeBits, new Progress<long>(bytes =>
+                            {
+                                processed += bytes;
+                                int pct = totalBytes == 0 ? 0 : Math.Min(100, (int)((double)processed / totalBytes * 100));
+                                if (pct != lastPctRetry) { lastPctRetry = pct; progress?.Report(pct / 100.0); }
+                            }), ct);
+                        }
                     }
                     else
                     {
@@ -200,11 +214,14 @@ namespace EncryptTools
 
                     if (peekAlg == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher && RuntimeHelper.IsNet8InstalledOnMachine)
                     {
-                        bool ok = await GcmRunner.DecryptAsync(file, outFile, _options.Password, _options.Log).ConfigureAwait(false);
+                        long decFileLen = new FileInfo(file).Length;
+                        IProgress<double> gcmDecProgress = progress == null ? null : new GcmToOverallProgress(progress, () => processed, totalBytes, decFileLen);
+                        bool ok = await GcmRunner.DecryptAsync(file, outFile, _options.Password, gcmDecProgress, _options.Log, ct).ConfigureAwait(false);
                         if (ok)
                         {
                             result = new CryptoService.DecryptResult { OriginalFileName = peekedOriginalName };
                             usedGcmRunner = true;
+                            processed += decFileLen;
                         }
                         else
                         {
@@ -220,10 +237,12 @@ namespace EncryptTools
 
                     if (!usedGcmRunner)
                     {
+                        int lastPct = -1;
                         result = await _crypto.DecryptFileAsync(file, outFile, _options.Password, new Progress<long>(bytes =>
                         {
                             processed += bytes;
-                            progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
+                            int pct = totalBytes == 0 ? 0 : Math.Min(100, (int)((double)processed / totalBytes * 100));
+                            if (pct != lastPct) { lastPct = pct; progress?.Report(pct / 100.0); }
                         }), ct);
                     }
                 }
@@ -231,10 +250,12 @@ namespace EncryptTools
                 {
                     if (TryForceUnlockFile(file, ioEx))
                     {
+                        int lastPctRetry = -1;
                         result = await _crypto.DecryptFileAsync(file, outFile, _options.Password, new Progress<long>(bytes =>
                         {
                             processed += bytes;
-                            progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);
+                            int pct = totalBytes == 0 ? 0 : Math.Min(100, (int)((double)processed / totalBytes * 100));
+                            if (pct != lastPctRetry) { lastPctRetry = pct; progress?.Report(pct / 100.0); }
                         }), ct);
                     }
                     else
@@ -390,11 +411,16 @@ namespace EncryptTools
 
         private string DeriveDecryptedName(string encryptedName)
         {
+            if (!string.IsNullOrWhiteSpace(_options.EncryptedExtension))
+            {
+                var ext = _options.EncryptedExtension!.Trim();
+                if (ext.Length > 0 && encryptedName.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
+                    return encryptedName.Substring(0, encryptedName.Length - ext.Length);
+            }
             if (encryptedName.EndsWith(".enc2", StringComparison.OrdinalIgnoreCase))
                 return encryptedName.Substring(0, encryptedName.Length - 5);
             if (encryptedName.EndsWith(".enc1", StringComparison.OrdinalIgnoreCase))
                 return encryptedName.Substring(0, encryptedName.Length - 5);
-            // 仅支持 .enc1 / .enc2 作为加密扩展名，其它情况直接返回原名，避免反复追加 .dec
             return encryptedName;
         }
 
@@ -620,6 +646,29 @@ namespace EncryptTools
             catch (Exception ex)
             {
                 _options.Log?.Invoke($"删除{label}失败，已保留: {file} - {ex.Message}");
+            }
+        }
+
+        /// <summary>将 GcmRunner 的单文件进度 (0..1) 转为整批进度并上报，供 GCM 子进程轮询进度时使用。</summary>
+        private sealed class GcmToOverallProgress : IProgress<double>
+        {
+            private readonly IProgress<double> _inner;
+            private readonly Func<long> _getProcessed;
+            private readonly long _totalBytes;
+            private readonly long _currentFileLen;
+
+            internal GcmToOverallProgress(IProgress<double> inner, Func<long> getProcessed, long totalBytes, long currentFileLen)
+            {
+                _inner = inner;
+                _getProcessed = getProcessed;
+                _totalBytes = totalBytes;
+                _currentFileLen = currentFileLen;
+            }
+
+            public void Report(double value)
+            {
+                double overall = _totalBytes == 0 ? value : (_getProcessed() + value * _currentFileLen) / (double)_totalBytes;
+                _inner.Report(Math.Min(1.0, overall));
             }
         }
     }

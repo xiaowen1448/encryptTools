@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace EncryptTools
@@ -138,8 +139,9 @@ namespace EncryptTools
 
         /// <summary>
         /// 使用 GcmCli 加密。返回 true 表示成功，false 表示未找到或执行失败。
+        /// 若传入 progress，则按输出文件大小轮询上报进度（GCM 子进程无回调，用输出文件增长模拟）。
         /// </summary>
-        public static async Task<bool> EncryptAsync(string inputPath, string outputPath, string password, Action<string> log = null)
+        public static async Task<bool> EncryptAsync(string inputPath, string outputPath, string password, IProgress<double> progress = null, Action<string> log = null, CancellationToken ct = default)
         {
             string cliDir = GetGcmCliDir();
             if (string.IsNullOrEmpty(cliDir))
@@ -160,7 +162,27 @@ namespace EncryptTools
                 using (var p = Process.Start(psi))
                 {
                     if (p == null) return false;
-                    await Task.Run(() => p.WaitForExit(120000)).ConfigureAwait(false);
+                    if (progress != null)
+                    {
+                        long inputLen = new FileInfo(inputPath).Length;
+                        long estimatedOut = inputLen + 1024 + (int)((inputLen / (4 * 1024 * 1024L) + 1) * 16);
+                        while (!p.HasExited)
+                        {
+                            try
+                            {
+                                if (File.Exists(outputPath))
+                                {
+                                    long cur = new FileInfo(outputPath).Length;
+                                    progress.Report(Math.Min(1.0, (double)cur / Math.Max(1, estimatedOut)));
+                                }
+                            }
+                            catch { }
+                            try { await Task.Delay(80, ct).ConfigureAwait(false); } catch (OperationCanceledException) { }
+                        }
+                        progress.Report(1.0);
+                    }
+                    else
+                        await Task.Run(() => p.WaitForExit(120000), ct).ConfigureAwait(false);
                     if (p.ExitCode != 0)
                         log?.Invoke("GCM 加密失败，退出码: " + p.ExitCode);
                     return p.ExitCode == 0;
@@ -180,8 +202,9 @@ namespace EncryptTools
 
         /// <summary>
         /// 使用 GcmCli 解密。返回 true 表示成功。
+        /// 若传入 progress，则按输出文件大小轮询上报进度（GCM 子进程无回调，用输出文件增长模拟）。
         /// </summary>
-        public static async Task<bool> DecryptAsync(string inputPath, string outputPath, string password, Action<string> log = null)
+        public static async Task<bool> DecryptAsync(string inputPath, string outputPath, string password, IProgress<double> progress = null, Action<string> log = null, CancellationToken ct = default)
         {
             string cliDir = GetGcmCliDir();
             if (string.IsNullOrEmpty(cliDir))
@@ -202,7 +225,26 @@ namespace EncryptTools
                 using (var p = Process.Start(psi))
                 {
                     if (p == null) return false;
-                    await Task.Run(() => p.WaitForExit(120000)).ConfigureAwait(false);
+                    if (progress != null)
+                    {
+                        long inputLen = new FileInfo(inputPath).Length;
+                        while (!p.HasExited)
+                        {
+                            try
+                            {
+                                if (File.Exists(outputPath))
+                                {
+                                    long cur = new FileInfo(outputPath).Length;
+                                    progress.Report(Math.Min(1.0, (double)cur / Math.Max(1, inputLen)));
+                                }
+                            }
+                            catch { }
+                            try { await Task.Delay(80, ct).ConfigureAwait(false); } catch (OperationCanceledException) { }
+                        }
+                        progress.Report(1.0);
+                    }
+                    else
+                        await Task.Run(() => p.WaitForExit(120000), ct).ConfigureAwait(false);
                     if (p.ExitCode != 0)
                         log?.Invoke("GCM 解密失败，退出码: " + p.ExitCode);
                     return p.ExitCode == 0;

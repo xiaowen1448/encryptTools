@@ -392,12 +392,58 @@ namespace EncryptTools
                 Dock = DockStyle.Fill,
                 View = View.Details,
                 FullRowSelect = true,
-                AllowDrop = true
+                AllowDrop = true,
+                OwnerDraw = true
+            };
+            lvFiles.DrawColumnHeader += (s, e) =>
+            {
+                e.DrawDefault = true;
+            };
+            lvFiles.DrawSubItem += (s, e) =>
+            {
+                if (e.ColumnIndex != 4) { e.DrawDefault = true; return; }
+                int raw = e.Item?.Tag is int v ? v : -1;
+                var r = e.Bounds;
+                if (r.Width <= 0 || r.Height <= 0) return;
+                e.Graphics.FillRectangle(SystemBrushes.Window, r);
+                bool decryptMode = raw >= 1000;
+                int percent = decryptMode ? raw - 1000 : raw;
+                string text;
+                int barW;
+                if (raw < 0)
+                {
+                    text = "-";
+                    barW = 0;
+                }
+                else
+                {
+                    text = percent + "%";
+                    int p = Math.Max(0, Math.Min(100, percent));
+                    if (decryptMode)
+                        barW = (int)((r.Width - 4) * p / 100.0);
+                    else
+                        barW = (int)((r.Width - 4) * p / 100.0);
+                }
+                if (barW > 0)
+                {
+                    // 解密=绿色（含 100% 时整条填满绿色）；未解密/加密=红色
+                    Color barColor = decryptMode
+                        ? Color.FromArgb(0x4C, 0xAF, 0x50)   // 解密：绿色
+                        : Color.FromArgb(0xD3, 0x32, 0x2F); // 加密/未解密：红色
+                    using (var brush = new SolidBrush(barColor))
+                    {
+                        var barRect = new Rectangle(r.X + 2, r.Y + 2, barW, r.Height - 4);
+                        e.Graphics.FillRectangle(brush, barRect);
+                    }
+                }
+                var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                e.Graphics.DrawString(text, e.Item?.ListView?.Font ?? SystemFonts.DefaultFont, SystemBrushes.ControlText, r, sf);
             };
             lvFiles.Columns.Add("名称", 160);
             lvFiles.Columns.Add("路径", 280);
             lvFiles.Columns.Add("大小", 80);
             lvFiles.Columns.Add("状态", 80);
+            lvFiles.Columns.Add("进度", 72);
 
             lvFiles.DragEnter += (s, e) =>
             {
@@ -750,7 +796,20 @@ namespace EncryptTools
                     var fi = new System.IO.FileInfo(path);
                     sizeText = $"{fi.Length / 1024} KB";
                 }
-                var item = new ListViewItem(new[] { name, path, sizeText, "就绪" });
+                string status = "正常";
+                if (System.IO.File.Exists(path) && CryptoService.IsWxEncryptedFile(path))
+                    status = "已加密";
+                else if (System.IO.Directory.Exists(path))
+                {
+                    try
+                    {
+                        if (Directory.GetFiles(path, "*.*", SearchOption.AllDirectories).Any(f => CryptoService.IsWxEncryptedFile(f)))
+                            status = "已加密";
+                    }
+                    catch { }
+                }
+                var item = new ListViewItem(new[] { name, path, sizeText, status, "-" });
+                item.Tag = -1;
                 lv.Items.Add(item);
             }
             catch { }
@@ -1162,6 +1221,51 @@ namespace EncryptTools
             }
         }
 
+        /// <summary>自定义 IProgress：每次 Report 都单独 BeginInvoke 到 UI，避免 .NET Progress 只回调最后一次导致单文件只显示 0% 和 100%。</summary>
+        private sealed class FileListProgress : IProgress<double>
+        {
+            private readonly ListView? _lv;
+            private readonly string _sourcePath;
+            private readonly bool _isDecrypt;
+
+            internal FileListProgress(ListView? lv, string sourcePath, bool isDecrypt)
+            {
+                _lv = lv;
+                _sourcePath = sourcePath;
+                _isDecrypt = isDecrypt;
+            }
+
+            public void Report(double value)
+            {
+                if (_lv == null || _lv.IsDisposed) return;
+                int percent = Math.Min(100, Math.Max(0, (int)(value * 100)));
+                _lv.BeginInvoke(new Action(() => UpdateFileListProgress(_lv, _sourcePath, percent, _isDecrypt)));
+            }
+        }
+
+        private static IProgress<double> CreateFileListProgress(ListView? lv, string sourcePath, bool isDecrypt)
+            => new FileListProgress(lv, sourcePath, isDecrypt);
+
+        private static void UpdateFileListProgress(ListView? lv, string sourcePath, int percent, bool isDecrypt = false)
+        {
+            if (lv == null) return;
+            if (lv.InvokeRequired) { lv.BeginInvoke(new Action(() => UpdateFileListProgress(lv, sourcePath, percent, isDecrypt))); return; }
+            int p = Math.Min(100, Math.Max(0, percent));
+            int tag = isDecrypt ? (1000 + p) : p;
+            string text = p + "%";
+            foreach (ListViewItem item in lv.Items)
+            {
+                if (item.SubItems.Count <= 1) continue;
+                if (!string.Equals(item.SubItems[1].Text, sourcePath, StringComparison.OrdinalIgnoreCase)) continue;
+                bool percentChanged = !(item.Tag is int existingTag && existingTag == tag);
+                if (item.SubItems.Count <= 4) item.SubItems.Add(text);
+                else item.SubItems[4].Text = text;
+                item.Tag = tag;
+                if (percentChanged) { try { lv.Invalidate(lv.GetItemRect(item.Index)); } catch { lv.Invalidate(); } }
+                break;
+            }
+        }
+
         /// <summary>
         /// 不勾选覆盖时，所有拖入项共用一个 output 目录；若拖入路径已在 output 内则不再嵌套 output/output。
         /// </summary>
@@ -1239,15 +1343,15 @@ namespace EncryptTools
             return common;
         }
 
-        private static bool IsSourceAlreadyEncryptedInOutput(string source, bool isDir, string commonOutputRoot, CryptoAlgorithm algorithm)
+        private static bool IsSourceAlreadyEncryptedInOutput(string source, bool isDir, string commonOutputRoot, string encryptedExt)
         {
             if (string.IsNullOrEmpty(commonOutputRoot) || !Directory.Exists(commonOutputRoot))
                 return false;
-            string ext = GetEncryptedExtension(algorithm);
+            string ext = string.IsNullOrWhiteSpace(encryptedExt) ? ".enc1" : encryptedExt.Trim();
             if (!isDir)
             {
                 string fileName = Path.GetFileName(source);
-                bool nameAlreadyHasExt = fileName.EndsWith(".enc1", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".enc2", StringComparison.OrdinalIgnoreCase);
+                bool nameAlreadyHasExt = fileName.EndsWith(ext, StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".enc1", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".enc2", StringComparison.OrdinalIgnoreCase);
                 string outPath = Path.Combine(commonOutputRoot, nameAlreadyHasExt ? fileName : fileName + ext);
                 return File.Exists(outPath);
             }
@@ -1259,7 +1363,7 @@ namespace EncryptTools
                     string rel = file.StartsWith(root, StringComparison.OrdinalIgnoreCase)
                         ? file.Substring(root.Length)
                         : Path.GetFileName(file);
-                    bool relAlreadyHasExt = rel.EndsWith(".enc1", StringComparison.OrdinalIgnoreCase) || rel.EndsWith(".enc2", StringComparison.OrdinalIgnoreCase);
+                    bool relAlreadyHasExt = rel.EndsWith(ext, StringComparison.OrdinalIgnoreCase) || rel.EndsWith(".enc1", StringComparison.OrdinalIgnoreCase) || rel.EndsWith(".enc2", StringComparison.OrdinalIgnoreCase);
                     string outPath = Path.Combine(commonOutputRoot, relAlreadyHasExt ? rel : rel + ext);
                     if (!File.Exists(outPath))
                         return false;
@@ -1272,8 +1376,6 @@ namespace EncryptTools
             }
         }
 
-        private static readonly string[] EncryptedExtensions = new[] { ".enc1", ".enc2" };
-
         private static int CountEncryptedFilesInFolder(string dir)
         {
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
@@ -1283,7 +1385,7 @@ namespace EncryptTools
                 int n = 0;
                 foreach (string f in Directory.EnumerateFiles(dir, "*", System.IO.SearchOption.AllDirectories))
                 {
-                    if (EncryptedExtensions.Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase)))
+                    if (CryptoService.IsWxEncryptedFile(f))
                         n++;
                 }
                 return n;
@@ -1345,7 +1447,16 @@ namespace EncryptTools
                     try
                     {
                         string line = m.IndexOf(']') > 0 ? m : $"[{DateTime.Now:HH:mm:ss}] {m}";
-                        ctx.LogBox.AppendText(line + Environment.NewLine);
+                        void appendAndScroll()
+                        {
+                            ctx.LogBox.AppendText(line + Environment.NewLine);
+                            ctx.LogBox.SelectionStart = ctx.LogBox.Text.Length;
+                            ctx.LogBox.ScrollToCaret();
+                        }
+                        if (ctx.LogBox.InvokeRequired)
+                            ctx.LogBox.BeginInvoke(new Action(appendAndScroll));
+                        else
+                            appendAndScroll();
                     }
                     catch { }
                 });
@@ -1364,6 +1475,16 @@ namespace EncryptTools
                 }
 
                 bool loggedAlreadyEncrypted = false;
+                if (ctx.FileListView != null)
+                {
+                    foreach (ListViewItem it in ctx.FileListView.Items)
+                    {
+                        if (it.SubItems.Count <= 4) it.SubItems.Add("0%");
+                        else it.SubItems[4].Text = "0%";
+                        it.Tag = 0;
+                    }
+                    ctx.FileListView.Invalidate();
+                }
                 foreach (var source in paths)
                 {
                     if (!File.Exists(source) && !Directory.Exists(source)) { continue; }
@@ -1371,7 +1492,7 @@ namespace EncryptTools
                     string baseDir = Path.GetDirectoryName(source) ?? source;
                     string outDir = inPlace ? (isDir ? source : baseDir) : commonOutputRoot;
 
-                    if (!inPlace && !packExe && IsSourceAlreadyEncryptedInOutput(source, isDir, commonOutputRoot, algorithm))
+                    if (!inPlace && !packExe && IsSourceAlreadyEncryptedInOutput(source, isDir, commonOutputRoot, encryptedExt))
                     {
                         string showPath = isDir ? outDir : source;
                         UpdateFileListItemPathStatus(ctx.FileListView, source, showPath, "已加密");
@@ -1432,7 +1553,7 @@ namespace EncryptTools
 
                                 if (packUseGcm)
                                 {
-                                    bool ok = await GcmRunner.EncryptAsync(oneFile, tmpEnc, password, m => log($"[{DateTime.Now:HH:mm:ss}] {m}")).ConfigureAwait(false);
+                                    bool ok = await GcmRunner.EncryptAsync(oneFile, tmpEnc, password, null, m => log($"[{DateTime.Now:HH:mm:ss}] {m}")).ConfigureAwait(false);
                                     if (!ok) { log($"[{DateTime.Now:HH:mm:ss}] 封装EXE失败: GCM 加密失败"); continue; }
                                 }
                                 else
@@ -1490,7 +1611,13 @@ namespace EncryptTools
                                     lastOut = dest;
                                     try
                                     {
-                                        ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已加密: {dest}{Environment.NewLine}");
+                                        void appendAndScroll()
+                                        {
+                                            ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已加密: {dest}{Environment.NewLine}");
+                                            ctx.LogBox.SelectionStart = ctx.LogBox.Text.Length;
+                                            ctx.LogBox.ScrollToCaret();
+                                        }
+                                        if (ctx.LogBox.InvokeRequired) ctx.LogBox.BeginInvoke(new Action(appendAndScroll)); else appendAndScroll();
                                     }
                                     catch { }
                                 }
@@ -1514,7 +1641,11 @@ namespace EncryptTools
                         EncryptedExtension = encryptedExt
                     };
                     var enc = new FileEncryptor(options);
-                    await enc.EncryptAsync(new Progress<double>(_ => { }), CancellationToken.None);
+                    var progress = CreateFileListProgress(ctx.FileListView, source, isDecrypt: false);
+                    UpdateFileListProgress(ctx.FileListView, source, 0);
+                    // 加密流程：读取源文件并上报进度 → 写入目标 → 若勾选覆盖则删除源文件；完成后将该项进度置为 100%（列表绘制为绿色）
+                    await enc.EncryptAsync(progress, CancellationToken.None);
+                    UpdateFileListProgress(ctx.FileListView, source, 100);
                     var ext = encryptedExt;
                     bool pathAlreadyEncrypted = source.EndsWith(".enc1", StringComparison.OrdinalIgnoreCase) || source.EndsWith(".enc2", StringComparison.OrdinalIgnoreCase);
                     var outPath = isDir ? outDir : (pathAlreadyEncrypted ? Path.Combine(outDir, Path.GetFileName(source)) : (lastOut ?? Path.Combine(outDir, Path.GetFileName(source) + ext)));
@@ -1522,12 +1653,12 @@ namespace EncryptTools
                         outPath = source;
                     UpdateFileListItemPathStatus(ctx.FileListView, source, outPath, "已加密");
                 }
-                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 加密完成。{Environment.NewLine}");
+                AppendLogAndScroll(ctx.LogBox, $"[{DateTime.Now:HH:mm:ss}] 加密完成。");
                 _statusLeft.Text = "加密完成。";
             }
             catch (Exception ex)
             {
-                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 加密失败: {ex.Message}{Environment.NewLine}");
+                AppendLogAndScroll(ctx.LogBox, $"[{DateTime.Now:HH:mm:ss}] 加密失败: {ex.Message}");
                 _statusLeft.Text = "加密失败。";
             }
         }
@@ -1553,6 +1684,8 @@ namespace EncryptTools
                 }
 
                 bool inPlace = ctx.ChkOverwrite?.Checked ?? false;
+                var algorithm = MapAlgorithm(ctx.CbAlgo);
+                var encryptedExt = GetSelectedEncryptedExtension(ctx.CbSuffix, algorithm);
                 _statusLeft.Text = "执行解密中…";
                 var log = new Action<string>(m =>
                 {
@@ -1560,7 +1693,13 @@ namespace EncryptTools
                     try
                     {
                         string line = m.IndexOf(']') > 0 ? m : $"[{DateTime.Now:HH:mm:ss}] {m}";
-                        ctx.LogBox.AppendText(line + Environment.NewLine);
+                        void appendAndScroll()
+                        {
+                            ctx.LogBox.AppendText(line + Environment.NewLine);
+                            ctx.LogBox.SelectionStart = ctx.LogBox.Text.Length;
+                            ctx.LogBox.ScrollToCaret();
+                        }
+                        if (ctx.LogBox.InvokeRequired) ctx.LogBox.BeginInvoke(new Action(appendAndScroll)); else appendAndScroll();
                     }
                     catch { }
                 });
@@ -1810,7 +1949,13 @@ namespace EncryptTools
                                 {
                                     try
                                     {
-                                        ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已解密: {dest}{Environment.NewLine}");
+                                        void appendAndScroll()
+                                        {
+                                            ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已解密: {dest}{Environment.NewLine}");
+                                            ctx.LogBox.SelectionStart = ctx.LogBox.Text.Length;
+                                            ctx.LogBox.ScrollToCaret();
+                                        }
+                                        if (ctx.LogBox.InvokeRequired) ctx.LogBox.BeginInvoke(new Action(appendAndScroll)); else appendAndScroll();
                                     }
                                     catch { }
                                 }
@@ -1830,15 +1975,21 @@ namespace EncryptTools
                         Password = password,
                         Iterations = 200_000,
                         AesKeySizeBits = 256,
-                        Log = interceptLog
+                        Log = interceptLog,
+                        EncryptedExtension = encryptedExt
                     };
                     var enc = new FileEncryptor(options);
-                    await enc.DecryptAsync(new Progress<double>(_ => { }), CancellationToken.None);
-                    var decName = DeriveDecryptedFileName(Path.GetFileName(source));
+                    UpdateFileListProgress(ctx.FileListView, source, 0, isDecrypt: true);
+                    var decryptProgress = CreateFileListProgress(ctx.FileListView, source, isDecrypt: true);
+                    // 解密流程：读取加密文件并上报进度 → 写入明文；完成后将该项进度置为 100%（列表绘制为绿色）
+                    await enc.DecryptAsync(decryptProgress, CancellationToken.None);
+                    UpdateFileListProgress(ctx.FileListView, source, 100, isDecrypt: true);
+                    var decName = DeriveDecryptedFileName(Path.GetFileName(source), encryptedExt);
                     string decPath;
                     if (finalOut != null)
                         decPath = isDir ? outDir : finalOut;
-                    else if (source.EndsWith(".enc1", StringComparison.OrdinalIgnoreCase) || source.EndsWith(".enc2", StringComparison.OrdinalIgnoreCase))
+                    else if (!string.IsNullOrWhiteSpace(encryptedExt) && source.EndsWith(encryptedExt.Trim(), StringComparison.OrdinalIgnoreCase)
+                        || source.EndsWith(".enc1", StringComparison.OrdinalIgnoreCase) || source.EndsWith(".enc2", StringComparison.OrdinalIgnoreCase))
                         decPath = isDir ? outDir : Path.Combine(outDir, decName);
                     else
                         decPath = source;
@@ -1851,20 +2002,32 @@ namespace EncryptTools
                     foreach (var p in paths)
                         UpdateFileListItemPathStatus(ctx.FileListView, p, p, "已解密");
                 }
-                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 解密完成。{Environment.NewLine}");
+                AppendLogAndScroll(ctx.LogBox, $"[{DateTime.Now:HH:mm:ss}] 解密完成。");
                 _statusLeft.Text = "解密完成。";
             }
             catch (NotSupportedException ex) when (ex.Message != null && (ex.Message.Contains("AES-GCM") || ex.Message.Contains("需要")))
             {
                 MessageBox.Show(RuntimeHelper.GetAesGcmRequirementMessage(), "需要 .NET 8", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 解密失败: {ex.Message}{Environment.NewLine}");
+                AppendLogAndScroll(ctx.LogBox, $"[{DateTime.Now:HH:mm:ss}] 解密失败: {ex.Message}");
                 _statusLeft.Text = "解密失败。";
             }
             catch (Exception ex)
             {
-                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 解密失败: {ex.Message}{Environment.NewLine}");
+                AppendLogAndScroll(ctx.LogBox, $"[{DateTime.Now:HH:mm:ss}] 解密失败: {ex.Message}");
                 _statusLeft.Text = "解密失败。";
             }
+        }
+
+        private static void AppendLogAndScroll(TextBoxBase logBox, string msg)
+        {
+            if (logBox == null) return;
+            void doAppend()
+            {
+                logBox.AppendText(msg + Environment.NewLine);
+                logBox.SelectionStart = logBox.Text.Length;
+                logBox.ScrollToCaret();
+            }
+            if (logBox.InvokeRequired) logBox.BeginInvoke(new Action(doAppend)); else doAppend();
         }
 
         private static void AppendLogWithRed(TextBoxBase logBox, string msg)
@@ -1884,13 +2047,18 @@ namespace EncryptTools
             }
         }
 
-        private static string DeriveDecryptedFileName(string encryptedName)
+        private static string DeriveDecryptedFileName(string encryptedName, string? encryptedExtension)
         {
+            if (!string.IsNullOrWhiteSpace(encryptedExtension))
+            {
+                var ext = encryptedExtension.Trim();
+                if (ext.Length > 0 && encryptedName.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
+                    return encryptedName.Substring(0, encryptedName.Length - ext.Length);
+            }
             if (encryptedName.EndsWith(".enc2", StringComparison.OrdinalIgnoreCase))
                 return encryptedName.Substring(0, encryptedName.Length - 5);
             if (encryptedName.EndsWith(".enc1", StringComparison.OrdinalIgnoreCase))
                 return encryptedName.Substring(0, encryptedName.Length - 5);
-            // 规范化：仅支持 .enc1 / .enc2 作为加密扩展名，其他情况直接返回原名
             return encryptedName;
         }
 
