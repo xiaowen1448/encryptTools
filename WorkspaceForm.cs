@@ -1381,11 +1381,17 @@ namespace EncryptTools
                             continue;
                         }
 
+                        bool useRandomExeName = ctx.ChkRandomFileName?.Checked ?? false;
                         foreach (var oneFile in filesToPack)
                         {
                             if (!File.Exists(oneFile)) continue;
                             string outExe;
-                            if (isDir)
+                            if (useRandomExeName)
+                            {
+                                string randomName = Guid.NewGuid().ToString("N") + ".exe";
+                                outExe = Path.Combine(outDir, randomName);
+                            }
+                            else if (isDir)
                             {
                                 var rel = GetRelativePathCompat(source, oneFile);
                                 rel = Path.ChangeExtension(rel, ".exe");
