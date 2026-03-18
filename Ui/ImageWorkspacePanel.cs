@@ -29,8 +29,8 @@ namespace EncryptTools.Ui
         private CheckBox _chkPixelation = null!;
         private CheckBox _chkIconOverlay = null!;
         private ComboBox _cbIcons = null!;
+        private ComboBox _cbIconBlock = null!;
         private NumericUpDown _numOverlayOpacity = null!;
-        private NumericUpDown _numIconScale = null!;
         private List<string> _customIconPaths = new List<string>();
         private bool _lastActionWasDecrypt;
         private ToolTip? _toolTip;
@@ -93,7 +93,11 @@ namespace EncryptTools.Ui
             _cbIcons.DropDown += (_, __) => SetComboDropDownWidth(_cbIcons, comboMaxW);
             var picIconThumb = new PictureBox { Size = new Size(btnHeight, btnHeight), SizeMode = PictureBoxSizeMode.Zoom, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 4, 8, 4), BackColor = SystemColors.Window };
             _numOverlayOpacity = new NumericUpDown { Minimum = 1, Maximum = 100, Value = 80, Width = 44, Margin = new Padding(2, 4, 4, 4) };
-            _numIconScale = new NumericUpDown { Minimum = 10, Maximum = 200, Value = 80, Width = 44, Margin = new Padding(2, 4, 8, 4) };
+            _cbIconBlock = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(56, 0), MaximumSize = new Size(comboMaxW, 0), Width = 72 };
+            _cbIconBlock.Items.AddRange(new object[] { "8×8", "16×16", "24×24", "32×32", "48×48", "64×64", "96×96", "128×128" });
+            _cbIconBlock.SelectedIndex = 3; // 32×32
+            _cbIconBlock.DropDown += (_, __) => SetComboDropDownWidth(_cbIconBlock, comboMaxW);
+            SetComboDropDownWidth(_cbIconBlock, comboMaxW);
 
             toolbar.Controls.Add(btnSelect);
             toolbar.Controls.Add(lblHint);
@@ -111,8 +115,8 @@ namespace EncryptTools.Ui
             toolbar.Controls.Add(picIconThumb);
             toolbar.Controls.Add(new Label { Text = "透明度%:", AutoSize = true, Margin = new Padding(4, 8, 2, 0) });
             toolbar.Controls.Add(_numOverlayOpacity);
-            toolbar.Controls.Add(new Label { Text = "图标缩放%:", AutoSize = true, Margin = new Padding(4, 8, 2, 0) });
-            toolbar.Controls.Add(_numIconScale);
+            toolbar.Controls.Add(new Label { Text = "图标块:", AutoSize = true, Margin = new Padding(4, 8, 2, 0) });
+            toolbar.Controls.Add(_cbIconBlock);
             toolbar.Controls.Add(btnEncrypt);
             toolbar.Controls.Add(btnDecrypt);
             toolbar.Controls.Add(btnSave);
@@ -603,8 +607,8 @@ namespace EncryptTools.Ui
             public bool PixelationEnabled { get; set; }
             public bool IconOverlayEnabled { get; set; }
             public int OverlayOpacityPercent { get; set; } = 80;
-            /// <summary>覆盖图标相对块大小的缩放比例（10～200），100 表示与块同大。</summary>
-            public int IconScalePercent { get; set; } = 80;
+            /// <summary>图标覆盖块大小（像素）。常用：8/16/24/32/48/64/96/128。</summary>
+            public int IconOverlayBlockSizeHint { get; set; } = 32;
             /// <summary>图标遮挡块的原始像素（用密码加密后 Base64），解密时用密码恢复再还原原图。</summary>
             public string? IconOverlayBlocksEncryptedBase64 { get; set; }
             /// <summary>遮挡使用的块尺寸，与 IconOverlayBlocksEncryptedBase64 配套。</summary>
@@ -930,7 +934,7 @@ namespace EncryptTools.Ui
                 PixelationEnabled = _chkPixelation.Checked,
                 IconOverlayEnabled = _chkIconOverlay.Checked,
                 OverlayOpacityPercent = (int)_numOverlayOpacity.Value,
-                IconScalePercent = (int)_numIconScale.Value
+                IconOverlayBlockSizeHint = ParseBlockSize(_cbIconBlock?.SelectedItem?.ToString()) ?? 32
             };
             // 记录当前所选密码文件名（仅文件名），用于解密时校验是否选对密码文件。旧元数据无此字段则不强制。
             try
@@ -940,6 +944,16 @@ namespace EncryptTools.Ui
             }
             catch { }
             return opt;
+        }
+
+        private static int? ParseBlockSize(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            // 支持 "16×16" / "16x16"
+            var parts = text.Replace('x', '×').Split('×');
+            if (parts.Length < 1) return null;
+            if (int.TryParse(parts[0].Trim(), out int n) && n > 0) return n;
+            return null;
         }
 
         /// <summary>
@@ -972,13 +986,10 @@ namespace EncryptTools.Ui
             }
             var target = work ?? bmp;
             int w = target.Width, h = target.Height;
-            // 按图片尺寸与图标缩放自动算块大小，实现全覆盖、无未遮挡区域
-            float scale = Math.Max(0.1f, Math.Min(2f, options.IconScalePercent / 100f));
-            int desiredBlocks = (int)(200 + (1f - scale) * 300);
-            desiredBlocks = Math.Max(80, Math.Min(500, desiredBlocks));
-            int block = (int)Math.Sqrt((double)w * h / desiredBlocks);
+            // 图标覆盖块大小：由下拉框选定（常用 8/16/24/32/48/64/96/128），大小越大图标占比越大
+            int block = Math.Max(4, options.IconOverlayBlockSizeHint);
             block = ((block + 3) / 4) * 4;
-            block = Math.Max(4, Math.Min(Math.Min(options.BlockSize, Math.Min(w, h)), Math.Max(block, 4)));
+            block = Math.Min(block, Math.Min(w, h));
             int bx = (w + block - 1) / block;
             int by = (h + block - 1) / block;
             int totalBlocks = bx * by;
