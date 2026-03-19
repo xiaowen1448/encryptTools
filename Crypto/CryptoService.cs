@@ -45,7 +45,7 @@ namespace EncryptTools
         /// <summary>固定 16 字节文件头：Magic(8) + Version(1) + EncryptType(1) + Reserved(6)。</summary>
         private static readonly byte[] HeaderMagic = System.Text.Encoding.ASCII.GetBytes("WXENC001");
         private const int HeaderSize = 16;
-        private const byte HeaderVersion = 1;
+        private const byte HeaderVersion = 2;
         /// <summary>加密类型一 = AES-CBC，加密类型二 = AES-GCM。</summary>
         private const byte EncryptTypeCbc = 1;
         private const byte EncryptTypeGcm = 2;
@@ -89,7 +89,8 @@ namespace EncryptTools
             int iterations,
             int aesKeySizeBits,
             IProgress<long>? progress,
-            CancellationToken ct)
+            CancellationToken ct,
+            byte[]? passwordFileHash = null)
         {
             if (algorithm != CryptoAlgorithm.AesCbc && algorithm != CryptoAlgorithm.AesGcm)
                 throw new NotSupportedException("本格式仅支持加密类型一(AES-CBC)与加密类型二(AES-GCM)。");
@@ -121,6 +122,20 @@ namespace EncryptTools
             var nameBytes = System.Text.Encoding.UTF8.GetBytes(originalName);
             bw.Write(nameBytes.Length);
             bw.Write(nameBytes);
+
+            // v2：写入 pwd 文件指纹（SHA256），用于保证“pwd 文件唯一对应解密”
+            if (HeaderVersion >= 2)
+            {
+                if (passwordFileHash == null || passwordFileHash.Length == 0)
+                {
+                    bw.Write(0);
+                }
+                else
+                {
+                    bw.Write(passwordFileHash.Length);
+                    bw.Write(passwordFileHash);
+                }
+            }
 
             switch (algorithm)
             {
@@ -195,6 +210,7 @@ namespace EncryptTools
             string? originalFileName = null;
             if (nameLen > 0 && nameLen < 4096)
                 originalFileName = System.Text.Encoding.UTF8.GetString(br.ReadBytes(nameLen));
+            // v2 之后还有 pwdHashLen+pwdHash；Peek 只需要原始文件名，故不继续读取
             return (alg, originalFileName);
         }
 
@@ -203,7 +219,8 @@ namespace EncryptTools
             string outputPath,
             string password,
             IProgress<long>? progress,
-            CancellationToken ct)
+            CancellationToken ct,
+            byte[]? passwordFileHash = null)
         {
 #if NET46 || NET48 || NET461
             var fileOptions = FileOptions.None;
@@ -218,6 +235,7 @@ namespace EncryptTools
             for (int i = 0; i < HeaderMagic.Length; i++)
                 if (header[i] != HeaderMagic[i])
                     throw new InvalidDataException("不是有效加密文件");
+            byte version = header[8];
             byte encryptType = header[9];
             CryptoAlgorithm alg = encryptType == EncryptTypeGcm ? CryptoAlgorithm.AesGcm : CryptoAlgorithm.AesCbc;
             if (encryptType != EncryptTypeCbc && encryptType != EncryptTypeGcm)
@@ -233,6 +251,26 @@ namespace EncryptTools
             var nameLen = br.ReadInt32();
             if (nameLen > 0 && nameLen < 4096)
                 originalFileName = System.Text.Encoding.UTF8.GetString(br.ReadBytes(nameLen));
+
+            // v2：校验 pwd 文件指纹
+            if (version >= 2)
+            {
+                int hashLen = br.ReadInt32();
+                byte[]? expected = null;
+                if (hashLen > 0 && hashLen <= 128)
+                    expected = br.ReadBytes(hashLen);
+
+                if (expected != null && expected.Length > 0)
+                {
+                    if (passwordFileHash == null || passwordFileHash.Length == 0)
+                        throw new CryptographicException("缺少密码文件或密码文件指纹无法读取。");
+                    if (passwordFileHash.Length != expected.Length)
+                        throw new CryptographicException("密码文件不匹配。");
+                    for (int i = 0; i < expected.Length; i++)
+                        if (passwordFileHash[i] != expected[i])
+                            throw new CryptographicException("密码文件不匹配。");
+                }
+            }
 
 #if NET46 || NET48 || NET461
             var outFileOptions = FileOptions.WriteThrough;

@@ -89,7 +89,7 @@ namespace EncryptTools.Ui
             _cbPwdFiles.DropDown += (_, __) => SetComboDropDownWidth(_cbPwdFiles, comboMaxW);
             _chkIconOverlay = new CheckBox { Text = "图标覆盖", AutoSize = true, Margin = new Padding(4, 6, 4, 0), Checked = true };
             int btnHeight = 24;
-            _cbIcons = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 4, 4), MinimumSize = new Size(100, 0), MaximumSize = new Size(comboMaxW, 0), Width = 120 };
+            _cbIcons = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(0, 0, 4, 0), MinimumSize = new Size(100, 0), MaximumSize = new Size(comboMaxW, 0), Width = 120 };
             _cbIcons.DropDown += (_, __) => SetComboDropDownWidth(_cbIcons, comboMaxW);
             var picIconThumb = new PictureBox { Size = new Size(btnHeight, btnHeight), SizeMode = PictureBoxSizeMode.Zoom, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 4, 8, 4), BackColor = SystemColors.Window };
             _numOverlayOpacity = new NumericUpDown { Minimum = 1, Maximum = 100, Value = 80, Width = 44, Margin = new Padding(2, 4, 4, 4) };
@@ -107,12 +107,28 @@ namespace EncryptTools.Ui
             toolbar.Controls.Add(_cbPwdFiles);
             toolbar.Controls.Add(new Label { Text = "块:", AutoSize = true, Margin = new Padding(4, 8, 4, 0) });
             toolbar.Controls.Add(_cbBlock);
-            var btnImportIcons = new Button { Text = "导入图标", AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
-            toolbar.Controls.Add(btnImportIcons);
             toolbar.Controls.Add(_chkIconOverlay);
-            toolbar.Controls.Add(new Label { Text = "图标:", AutoSize = true, Margin = new Padding(4, 8, 2, 0) });
-            toolbar.Controls.Add(_cbIcons);
-            toolbar.Controls.Add(picIconThumb);
+            // 图标下拉 + 导入按钮：放入同一行容器，保证高度/基线一致
+            var btnImportIcons = new Button { Text = "导入图标", AutoSize = false, Margin = new Padding(0) };
+            // 让“导入图标”与“加密(批量)”按钮长宽一致
+            var encSize = btnEncrypt.GetPreferredSize(Size.Empty);
+            btnImportIcons.Size = encSize;
+            var iconRow = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                Margin = new Padding(4, 4, 4, 4),
+                Padding = new Padding(0),
+                FlowDirection = FlowDirection.LeftToRight
+            };
+            // 图标覆盖选择框后：导入图标按钮 -> 图标下拉 -> 图标预览
+            iconRow.Controls.Add(btnImportIcons);
+            iconRow.Controls.Add(_cbIcons);
+            // 图标预览放在下拉框后面
+            picIconThumb.Margin = new Padding(0, 0, 4, 0);
+            iconRow.Controls.Add(picIconThumb);
+            toolbar.Controls.Add(iconRow);
             toolbar.Controls.Add(new Label { Text = "透明度%:", AutoSize = true, Margin = new Padding(4, 8, 2, 0) });
             toolbar.Controls.Add(_numOverlayOpacity);
             toolbar.Controls.Add(new Label { Text = "图标块:", AutoSize = true, Margin = new Padding(4, 8, 2, 0) });
@@ -327,6 +343,21 @@ namespace EncryptTools.Ui
             };
         }
 
+        private static void SetPreviewImagePreserveZoom(PictureBox box, Bitmap newImage)
+        {
+            if (box == null || box.IsDisposed || newImage == null) return;
+            var old = box.Tag as ZoomState;
+            float zoom = old?.Zoom ?? 1f;
+            var initial = old?.InitialDisplaySize ?? FitThumbnailSize(newImage.Size, 480, 360);
+
+            box.Image?.Dispose();
+            box.Image = newImage;
+            box.Tag = new ZoomState { BaseSize = newImage.Size, InitialDisplaySize = initial, Zoom = zoom };
+            int w = (int)(initial.Width * zoom);
+            int h = (int)(initial.Height * zoom);
+            box.Size = new Size(Math.Max(1, w), Math.Max(1, h));
+        }
+
         private async Task RunEncryptAsync()
         {
             if (_sheetTabs.TabPages.Count == 0) return;
@@ -381,11 +412,7 @@ namespace EncryptTools.Ui
                     }
                     if (processed != null && !rightBox.IsDisposed)
                     {
-                        rightBox.Image?.Dispose();
-                        rightBox.Image = processed;
-                        var sz = FitThumbnailSize(processed.Size, 480, 360);
-                        rightBox.Tag = new ZoomState { BaseSize = processed.Size, InitialDisplaySize = sz, Zoom = 1f };
-                        rightBox.Size = sz;
+                        SetPreviewImagePreserveZoom(rightBox, processed);
                         tab.Tag = new ImageSheetState { Path = path, EncryptedImage = (Bitmap)processed.Clone(), Options = options };
                         _log($"[{DateTime.Now:HH:mm:ss}] 加密完成: {Path.GetFileName(path)}");
                     }
@@ -529,11 +556,7 @@ namespace EncryptTools.Ui
                     }).ConfigureAwait(true);
                     if (decrypted != null && !rightBox.IsDisposed)
                     {
-                        rightBox.Image?.Dispose();
-                        rightBox.Image = decrypted;
-                        var sz = FitThumbnailSize(decrypted.Size, 480, 360);
-                        rightBox.Tag = new ZoomState { BaseSize = decrypted.Size, InitialDisplaySize = sz, Zoom = 1f };
-                        rightBox.Size = sz;
+                        SetPreviewImagePreserveZoom(rightBox, decrypted);
                         _log($"[{DateTime.Now:HH:mm:ss}] 解密完成: {Path.GetFileName(state.Path)}");
                     }
                 }
@@ -729,11 +752,7 @@ namespace EncryptTools.Ui
             }).ConfigureAwait(true);
             if (processed != null && !rightBox.IsDisposed && !tab.IsDisposed)
             {
-                rightBox.Image?.Dispose();
-                rightBox.Image = processed;
-                var sz = FitThumbnailSize(processed.Size, 480, 360);
-                rightBox.Tag = new ZoomState { BaseSize = processed.Size, InitialDisplaySize = sz, Zoom = 1f };
-                rightBox.Size = sz;
+                SetPreviewImagePreserveZoom(rightBox, processed);
                 tab.Tag = new ImageSheetState { Path = imagePath, EncryptedImage = (Bitmap)processed.Clone(), Options = options };
             }
         }

@@ -54,7 +54,8 @@ namespace EncryptTools.PasswordFile
             {
                 if (_chkSystemDerived.Checked)
                 {
-                    var pwd = PasswordFileService.GenerateSystemDerivedPassword();
+                    // 随机密码：每次生成都应不同
+                    var pwd = PasswordFileService.GenerateRandomPassword(32);
                     _txtPwd1.Text = pwd;
                     _txtPwd2.Text = pwd;
                 }
@@ -80,7 +81,7 @@ namespace EncryptTools.PasswordFile
             btnRefresh.Click += (_, __) =>
             {
                 // 刷新：保持与首次打开一致的密码长度，并更新随机文件名
-                int len = Math.Max(20, _txtPwd1.Text?.Length ?? 20);
+                int len = Math.Max(32, _txtPwd1.Text?.Length ?? 32);
                 var pwd = PasswordFileService.GenerateRandomPassword(len);
                 _txtPwd1.Text = pwd;
                 _txtPwd2.Text = pwd;

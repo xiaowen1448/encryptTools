@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -36,6 +37,8 @@ namespace EncryptTools
         public required Action<string> Log { get; set; }
         /// <summary>自定义加密后缀名（例如 .enc1 / .enc2），若为空则根据算法自动推导。</summary>
         public string? EncryptedExtension { get; set; }
+        /// <summary>所选 .pwd 文件的 SHA256 指纹，用于确保“pwd 文件唯一对应解密”。</summary>
+        public byte[]? PasswordFileHash { get; set; }
     }
 
     public class FileEncryptor
@@ -109,7 +112,7 @@ namespace EncryptTools
                             processed += bytes;
                             int pct = totalBytes == 0 ? 0 : Math.Min(100, (int)((double)processed / totalBytes * 100));
                             if (pct != lastPct) { lastPct = pct; progress?.Report(pct / 100.0); }
-                        }), ct);
+                        }), ct, _options.PasswordFileHash);
                     }
                 }
                 catch (IOException ioEx) when (IsSharingViolation(ioEx))
@@ -133,7 +136,7 @@ namespace EncryptTools
                                 processed += bytes;
                                 int pct = totalBytes == 0 ? 0 : Math.Min(100, (int)((double)processed / totalBytes * 100));
                                 if (pct != lastPctRetry) { lastPctRetry = pct; progress?.Report(pct / 100.0); }
-                            }), ct);
+                            }), ct, _options.PasswordFileHash);
                         }
                     }
                     else
@@ -196,6 +199,9 @@ namespace EncryptTools
 
                 var outFile = GetOutputFilePath(file, encrypt: false);
                 Directory.CreateDirectory(Path.GetDirectoryName(outFile)!);
+                // 先解密到临时文件，只有成功才替换为最终输出，避免密码错误时生成垃圾文件
+                var tmpOutFile = outFile + ".decrypting.tmp";
+                try { if (File.Exists(tmpOutFile)) File.Delete(tmpOutFile); } catch { }
                 _options.Log?.Invoke($"解密: {file} -> {outFile}");
                 CryptoService.DecryptResult? result = null;
                 string? peekedOriginalName = null;
@@ -216,7 +222,7 @@ namespace EncryptTools
                     {
                         long decFileLen = new FileInfo(file).Length;
                         IProgress<double> gcmDecProgress = progress == null ? null : new GcmToOverallProgress(progress, () => processed, totalBytes, decFileLen);
-                        bool ok = await GcmRunner.DecryptAsync(file, outFile, _options.Password, gcmDecProgress, _options.Log, ct).ConfigureAwait(false);
+                        bool ok = await GcmRunner.DecryptAsync(file, tmpOutFile, _options.Password, gcmDecProgress, _options.Log, ct).ConfigureAwait(false);
                         if (ok)
                         {
                             result = new CryptoService.DecryptResult { OriginalFileName = peekedOriginalName };
@@ -225,8 +231,9 @@ namespace EncryptTools
                         }
                         else
                         {
-                            _options.Log?.Invoke($"解密失败，跳过: {file}（GCM 执行失败）");
-                            continue;
+                            // GCM 子进程失败：通常是密码错误或执行失败。按“先校验密码”要求直接终止本次解密。
+                            _options.Log?.Invoke($"解密失败：密码错误或解密失败: {file}");
+                            throw new CryptographicException("GCM decrypt failed (wrong password or runner error).");
                         }
                     }
                     else if (peekAlg == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher && !RuntimeHelper.IsNet8InstalledOnMachine)
@@ -238,12 +245,12 @@ namespace EncryptTools
                     if (!usedGcmRunner)
                     {
                         int lastPct = -1;
-                        result = await _crypto.DecryptFileAsync(file, outFile, _options.Password, new Progress<long>(bytes =>
+                        result = await _crypto.DecryptFileAsync(file, tmpOutFile, _options.Password, new Progress<long>(bytes =>
                         {
                             processed += bytes;
                             int pct = totalBytes == 0 ? 0 : Math.Min(100, (int)((double)processed / totalBytes * 100));
                             if (pct != lastPct) { lastPct = pct; progress?.Report(pct / 100.0); }
-                        }), ct);
+                        }), ct, _options.PasswordFileHash);
                     }
                 }
                 catch (IOException ioEx) when (IsSharingViolation(ioEx))
@@ -251,18 +258,24 @@ namespace EncryptTools
                     if (TryForceUnlockFile(file, ioEx))
                     {
                         int lastPctRetry = -1;
-                        result = await _crypto.DecryptFileAsync(file, outFile, _options.Password, new Progress<long>(bytes =>
+                        result = await _crypto.DecryptFileAsync(file, tmpOutFile, _options.Password, new Progress<long>(bytes =>
                         {
                             processed += bytes;
                             int pct = totalBytes == 0 ? 0 : Math.Min(100, (int)((double)processed / totalBytes * 100));
                             if (pct != lastPctRetry) { lastPctRetry = pct; progress?.Report(pct / 100.0); }
-                        }), ct);
+                        }), ct, _options.PasswordFileHash);
                     }
                     else
                     {
                         _options.Log?.Invoke($"仍被占用，跳过: {file}");
                         continue;
                     }
+                }
+                catch (CryptographicException cex)
+                {
+                    try { if (File.Exists(tmpOutFile)) File.Delete(tmpOutFile); } catch { }
+                    _options.Log?.Invoke($"密码错误，解密已取消: {file} - {cex.Message}");
+                    throw;
                 }
                 catch (UnauthorizedAccessException uaEx)
                 {
@@ -273,6 +286,22 @@ namespace EncryptTools
                 {
                     _options.Log?.Invoke($"解密失败，跳过: {file} - {ex.Message}");
                     continue;
+                }
+
+                // 到这里表示解密成功：将临时文件替换为最终输出
+                try
+                {
+                    if (File.Exists(outFile)) File.Delete(outFile);
+                }
+                catch { }
+                try
+                {
+                    File.Move(tmpOutFile, outFile);
+                }
+                catch
+                {
+                    // 若 move 失败则尽量保留临时文件，避免丢失已解密数据
+                    throw;
                 }
 
                 // 自动还原原始文件名

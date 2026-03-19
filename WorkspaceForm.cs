@@ -1035,6 +1035,32 @@ namespace EncryptTools
             return null;
         }
 
+        private static string? GetSelectedPwdFilePath(WorkspaceContext ctx)
+        {
+            try
+            {
+                if (ctx.CbPwdFile == null || ctx.CbPwdFile.SelectedIndex <= 0) return null;
+                if (ctx.CbPwdFile.SelectedItem is string name && name.EndsWith(".pwd", StringComparison.OrdinalIgnoreCase))
+                {
+                    var path = Path.Combine(PasswordFileService.GetPwdDirectory(), name);
+                    return File.Exists(path) ? path : null;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static byte[]? TryComputePwdFileHash(string? pwdFilePath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(pwdFilePath) || !File.Exists(pwdFilePath)) return null;
+                var bytes = File.ReadAllBytes(pwdFilePath);
+                return Compat.Sha256Hash(bytes);
+            }
+            catch { return null; }
+        }
+
         private static string GetPasswordFileStem(WorkspaceContext ctx)
         {
             if (ctx.CbPwdFile?.SelectedItem is string name && !string.IsNullOrWhiteSpace(name) && name != "(未选择)")
@@ -1433,6 +1459,8 @@ namespace EncryptTools
                     ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已取消：密码为空。{Environment.NewLine}");
                     return;
                 }
+                var pwdPath = GetSelectedPwdFilePath(ctx);
+                var pwdHash = TryComputePwdFileHash(pwdPath);
 
                 bool packExe = ctx.ChkPackExe?.Checked ?? false;
                 bool inPlace = ctx.ChkOverwrite?.Checked ?? false;
@@ -1573,7 +1601,7 @@ namespace EncryptTools
                                         processed += bytes;
                                         int pct = fileLen <= 0 ? 0 : Math.Min(100, (int)((double)processed / fileLen * 100));
                                         if (pct != lastPct) { lastPct = pct; packProgress.Report(pct / 100.0); }
-                                    }), CancellationToken.None);
+                                    }), CancellationToken.None, pwdHash);
                                 }
                                 log($"[{DateTime.Now:HH:mm:ss}] 已生成临时加密文件: {tmpEnc}");
                                 UpdateFileListProgress(ctx.FileListView, oneFile, 100);
@@ -1653,7 +1681,8 @@ namespace EncryptTools
                         Iterations = 200_000,
                         AesKeySizeBits = 256,
                         Log = interceptLog,
-                        EncryptedExtension = encryptedExt
+                        EncryptedExtension = encryptedExt,
+                        PasswordFileHash = pwdHash
                     };
                     var enc = new FileEncryptor(options);
                     var progress = CreateFileListProgress(ctx.FileListView, source, isDecrypt: false);
@@ -1697,6 +1726,8 @@ namespace EncryptTools
                     ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已取消：密码为空。{Environment.NewLine}");
                     return;
                 }
+                var pwdPath = GetSelectedPwdFilePath(ctx);
+                var pwdHash = TryComputePwdFileHash(pwdPath);
 
                 bool inPlace = ctx.ChkOverwrite?.Checked ?? false;
                 var algorithm = MapAlgorithm(ctx.CbAlgo);
@@ -1861,13 +1892,15 @@ namespace EncryptTools
                                 var tmpEnc = Path.Combine(Path.GetTempPath(), "encryptTools_exe_dec_" + Guid.NewGuid().ToString("N") + ".enc");
                                 await Compat.FileWriteAllBytesAsync(tmpEnc, encBytes);
                                 var tmpOut = Path.Combine(outDir, "decrypt_" + Guid.NewGuid().ToString("N") + ".tmp");
+                                UpdateFileListProgress(ctx.FileListView, exePath, 0, isDecrypt: true);
+                                var exeDecProgress = CreateFileListProgress(ctx.FileListView, exePath, isDecrypt: true);
                                 CryptoService.DecryptResult result;
                                 try
                                 {
                                     var (peekAlg, peekName) = CryptoService.PeekEncryptedFileInfo(tmpEnc);
                                     if (peekAlg == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher && RuntimeHelper.IsNet8InstalledOnMachine)
                                     {
-                                        bool ok = await GcmRunner.DecryptAsync(tmpEnc, tmpOut, password, null).ConfigureAwait(false);
+                                        bool ok = await GcmRunner.DecryptAsync(tmpEnc, tmpOut, password, exeDecProgress).ConfigureAwait(false);
                                         if (!ok) { log($"封装EXE解密失败: {exePath} - GCM 执行失败"); try { File.Delete(tmpEnc); } catch { } continue; }
                                         result = new CryptoService.DecryptResult { OriginalFileName = peekName };
                                     }
@@ -1880,7 +1913,16 @@ namespace EncryptTools
                                     else
                                     {
                                         var crypto = new CryptoService();
-                                        result = await crypto.DecryptFileAsync(tmpEnc, tmpOut, password, null, CancellationToken.None);
+                                        long inLen = 0;
+                                        try { inLen = new FileInfo(tmpEnc).Length; } catch { }
+                                        long proc = 0;
+                                        int lastPct = -1;
+                                        result = await crypto.DecryptFileAsync(tmpEnc, tmpOut, password, new Progress<long>(bytes =>
+                                        {
+                                            proc += bytes;
+                                            int pct = inLen <= 0 ? 0 : Math.Min(100, (int)((double)proc / inLen * 100));
+                                            if (pct != lastPct) { lastPct = pct; exeDecProgress.Report(pct / 100.0); }
+                                        }), CancellationToken.None, pwdHash);
                                     }
                                 }
                                 finally { try { File.Delete(tmpEnc); } catch { } }
@@ -1888,6 +1930,7 @@ namespace EncryptTools
                                 var outPath = Path.Combine(outDir, desiredName);
                                 try { if (File.Exists(outPath)) File.Delete(outPath); } catch { }
                                 Compat.FileMoveOverwrite(tmpOut, outPath);
+                                UpdateFileListProgress(ctx.FileListView, exePath, 100, isDecrypt: true);
                                 try { ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已解密(EXE): {outPath}{Environment.NewLine}"); } catch { }
                                 UpdateFileListItemPathStatus(ctx.FileListView, exePath, outPath, "正常");
                                 if (inPlace) { try { File.Delete(exePath); } catch { } }
@@ -1908,13 +1951,15 @@ namespace EncryptTools
                             var tmpEnc = Path.Combine(Path.GetTempPath(), "encryptTools_exe_dec_" + Guid.NewGuid().ToString("N") + ".enc");
                             await Compat.FileWriteAllBytesAsync(tmpEnc, encBytes);
                             var tmpOut = Path.Combine(outDir, "decrypt_" + Guid.NewGuid().ToString("N") + ".tmp");
+                            UpdateFileListProgress(ctx.FileListView, source, 0, isDecrypt: true);
+                            var exeDecProgress = CreateFileListProgress(ctx.FileListView, source, isDecrypt: true);
                             CryptoService.DecryptResult result;
                             try
                             {
                                 var (peekAlg, peekName) = CryptoService.PeekEncryptedFileInfo(tmpEnc);
                                 if (peekAlg == CryptoAlgorithm.AesGcm && !RuntimeHelper.IsNet8OrHigher && RuntimeHelper.IsNet8InstalledOnMachine)
                                 {
-                                    bool ok = await GcmRunner.DecryptAsync(tmpEnc, tmpOut, password, null).ConfigureAwait(false);
+                                    bool ok = await GcmRunner.DecryptAsync(tmpEnc, tmpOut, password, exeDecProgress).ConfigureAwait(false);
                                     if (!ok) { log($"封装EXE解密失败: {source} - GCM 执行失败"); try { File.Delete(tmpEnc); } catch { } continue; }
                                     result = new CryptoService.DecryptResult { OriginalFileName = peekName };
                                 }
@@ -1927,7 +1972,16 @@ namespace EncryptTools
                                 else
                                 {
                                     var crypto = new CryptoService();
-                                    result = await crypto.DecryptFileAsync(tmpEnc, tmpOut, password, null, CancellationToken.None);
+                                    long inLen = 0;
+                                    try { inLen = new FileInfo(tmpEnc).Length; } catch { }
+                                    long proc = 0;
+                                    int lastPct = -1;
+                                    result = await crypto.DecryptFileAsync(tmpEnc, tmpOut, password, new Progress<long>(bytes =>
+                                    {
+                                        proc += bytes;
+                                        int pct = inLen <= 0 ? 0 : Math.Min(100, (int)((double)proc / inLen * 100));
+                                        if (pct != lastPct) { lastPct = pct; exeDecProgress.Report(pct / 100.0); }
+                                    }), CancellationToken.None, pwdHash);
                                 }
                             }
                             finally { try { File.Delete(tmpEnc); } catch { } }
@@ -1935,6 +1989,7 @@ namespace EncryptTools
                             var outPath = Path.Combine(outDir, desiredName);
                             try { if (File.Exists(outPath)) File.Delete(outPath); } catch { }
                             Compat.FileMoveOverwrite(tmpOut, outPath);
+                            UpdateFileListProgress(ctx.FileListView, source, 100, isDecrypt: true);
                             try { ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已解密(EXE): {outPath}{Environment.NewLine}"); } catch { }
                             UpdateFileListItemPathStatus(ctx.FileListView, source, outPath, "正常");
                             if (inPlace) { try { File.Delete(source); } catch { } }
@@ -1991,7 +2046,8 @@ namespace EncryptTools
                         Iterations = 200_000,
                         AesKeySizeBits = 256,
                         Log = interceptLog,
-                        EncryptedExtension = encryptedExt
+                        EncryptedExtension = encryptedExt,
+                        PasswordFileHash = pwdHash
                     };
                     var enc = new FileEncryptor(options);
                     UpdateFileListProgress(ctx.FileListView, source, 0, isDecrypt: true);

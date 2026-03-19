@@ -45,11 +45,11 @@ namespace EncryptTools.PasswordFile
         }
 
         /// <summary>
-        /// 生成符合复杂度要求的随机密码（默认 20 位以上，含大小写/数字/符号）。
+        /// 生成符合复杂度要求的随机密码（默认 32 位以上，含大小写/数字/符号）。
         /// </summary>
-        public static string GenerateRandomPassword(int length = 20)
+        public static string GenerateRandomPassword(int length = 32)
         {
-            if (length < 12) length = 20;
+            if (length < 12) length = 32;
             const string lower = "abcdefghijklmnopqrstuvwxyz";
             const string upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
             const string digits = "0123456789";
