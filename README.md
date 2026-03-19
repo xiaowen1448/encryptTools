@@ -6,9 +6,9 @@
 
 文件加密解密：
 
-![246575b73328d6f21f745d5243dfc83b](https://github.com/user-attachments/assets/340756ec-9869-4d64-a979-acd8b862b85b)
+<img width="1844" height="1080" alt="image" src="https://github.com/user-attachments/assets/fd3017c4-595e-4b0f-aba6-383990a4f952" />
 
-<img width="1844" height="1080" alt="7a7b60a4e3a82ee48676415e07660418" src="https://github.com/user-attachments/assets/a6257883-d52e-4791-9588-cc300089d4e2" />
+<img width="1844" height="1080" alt="image" src="https://github.com/user-attachments/assets/a4867340-7811-4230-86b7-be3589714333" />
 
 
 加密为exe程序，输入密码错误，自毁exe文件
