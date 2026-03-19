@@ -13,12 +13,11 @@
 
 加密为exe程序，输入密码错误，自毁exe文件
 
-<img width="1844" height="1080" alt="image" src="https://github.com/user-attachments/assets/75a77123-e293-4689-b72a-146733e93519" />
+<img width="1844" height="1080" alt="image" src="https://github.com/user-attachments/assets/5ca05886-19a1-4f84-9fc5-a559f1a22043" />
 
+<img width="1844" height="1080" alt="image" src="https://github.com/user-attachments/assets/7cda6f6a-5c4a-477b-a120-5a0e2e0258b3" />
 
-<img width="1594" height="790" alt="image" src="https://github.com/user-attachments/assets/23701dc6-26b8-4e16-808b-93e448902360" />
-
-
+<img width="1575" height="800" alt="image" src="https://github.com/user-attachments/assets/d099a426-5877-4383-96e6-c24d7835cbc5" />
 
 
 图片像素化加密解密：
