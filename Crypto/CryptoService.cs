@@ -3,7 +3,9 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
+#if !(NET46 || NET48 || NET461)
 using System.Buffers;
+#endif
 using System.Collections.Generic;
 using System.Text;
 
@@ -26,6 +28,7 @@ namespace EncryptTools
         void Return(byte[] array);
     }
 
+#if !(NET46 || NET48 || NET461)
     internal sealed class ArrayPoolAdapter : IBufferPool
     {
         private readonly ArrayPool<byte> _pool;
@@ -33,6 +36,7 @@ namespace EncryptTools
         public byte[] Rent(int minimumLength) => _pool.Rent(minimumLength);
         public void Return(byte[] array) { _pool.Return(array); }
     }
+#endif
 
     internal sealed class SimpleBufferPool : IBufferPool
     {
@@ -66,6 +70,12 @@ namespace EncryptTools
         private static readonly Lazy<ThreadLocal<KeyCacheEntry>> KeyCacheLazy =
             new Lazy<ThreadLocal<KeyCacheEntry>>(() => new ThreadLocal<KeyCacheEntry>());
 
+        // .NET Framework：封装后的 exe 常与主程序分拆拷贝，若引用 ArrayPool 会强制加载 System.Buffers.dll，缺失则解密失败。
+        // 改用纯托管 new byte[]，不依赖 System.Buffers 程序集。
+#if NET46 || NET48 || NET461
+        private static readonly Lazy<IBufferPool> BufferPoolLazy =
+            new Lazy<IBufferPool>(() => new SimpleBufferPool());
+#else
         private static readonly Lazy<IBufferPool> BufferPoolLazy = new Lazy<IBufferPool>(() =>
         {
             try
@@ -77,6 +87,7 @@ namespace EncryptTools
                 return new SimpleBufferPool();
             }
         });
+#endif
 
         private static ThreadLocal<KeyCacheEntry> KeyCache => KeyCacheLazy.Value;
         private static IBufferPool GetBufferPool() => BufferPoolLazy.Value;
@@ -260,10 +271,11 @@ namespace EncryptTools
                 if (hashLen > 0 && hashLen <= 128)
                     expected = br.ReadBytes(hashLen);
 
-                if (expected != null && expected.Length > 0)
+                // v2 加了“pwd 文件指纹”约束。
+                // 为了兼容「仅输入密码」的解密场景：当调用方没有传入 passwordFileHash 时，跳过指纹校验。
+                // 当调用方明确选择了“密码文件”方式并传入 passwordFileHash 时，才进行严格比对失败即抛出。
+                if (expected != null && expected.Length > 0 && passwordFileHash != null && passwordFileHash.Length > 0)
                 {
-                    if (passwordFileHash == null || passwordFileHash.Length == 0)
-                        throw new CryptographicException("缺少密码文件或密码文件指纹无法读取。");
                     if (passwordFileHash.Length != expected.Length)
                         throw new CryptographicException("密码文件不匹配。");
                     for (int i = 0; i < expected.Length; i++)

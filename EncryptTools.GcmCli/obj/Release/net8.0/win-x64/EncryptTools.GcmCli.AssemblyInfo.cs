@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("EncryptTools.GcmCli")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a2e554b63931070671766e989f42b4cce9739228")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ef22f868a9463b078f16c01994ae25f4c69a044f")]
 [assembly: System.Reflection.AssemblyProductAttribute("EncryptTools.GcmCli")]
 [assembly: System.Reflection.AssemblyTitleAttribute("EncryptTools.GcmCli")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

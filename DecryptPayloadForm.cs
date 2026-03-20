@@ -64,7 +64,7 @@ namespace EncryptTools
             _btnDecrypt = new Button { Text = "解密并释放", AutoSize = true, BackColor = Color.SeaGreen, ForeColor = Color.White, Padding = new Padding(10, 6, 10, 6) };
             actions.Controls.Add(_btnDecrypt);
 
-            _lblStatus = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray, Text = "注意：密码文件错误或密码错误一次将删除此程序。" };
+            _lblStatus = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray, Text = "提示：v2 加密包需用「密码文件」选择加密时的 .pwd；解密失败可修改后重试。" };
 
             root.Controls.Add(title, 0, 0);
             root.Controls.Add(rowMode, 0, 1);
@@ -111,7 +111,7 @@ namespace EncryptTools
             else
             {
                 _lblStatus.ForeColor = Color.DimGray;
-                _lblStatus.Text = "注意：密码文件错误或密码错误一次将删除此程序。";
+                _lblStatus.Text = "提示：绑定 .pwd 的加密包请使用「密码文件」方式解密。";
             }
         }
 
@@ -136,11 +136,12 @@ namespace EncryptTools
             {
                 if (!ExePayload.TryReadPayload(_exePath, out var meta, out var encryptedBytes, out var payloadErr) || encryptedBytes == null)
                 {
-                    FailAndSelfDelete("载荷读取失败。" + (string.IsNullOrEmpty(payloadErr) ? "" : " " + payloadErr));
+                    ResetDecryptUiAfterFailure("载荷读取失败。" + (string.IsNullOrEmpty(payloadErr) ? "" : " " + payloadErr));
                     return;
                 }
 
                 string password;
+                byte[]? passwordFileHash = null;
                 bool isPwdFile = _cbMode.SelectedIndex == 1;
                 if (!isPwdFile && !string.IsNullOrWhiteSpace(_txtValue.Text))
                 {
@@ -148,8 +149,20 @@ namespace EncryptTools
                 }
                 else if (isPwdFile && !string.IsNullOrWhiteSpace(_txtValue.Text) && File.Exists(_txtValue.Text))
                 {
-                    try { password = PasswordFileHelper.LoadPasswordFromFile(_txtValue.Text); }
-                    catch { FailAndSelfDelete("密码文件导入失败。"); return; }
+                    var pwdPath = _txtValue.Text;
+                    try { password = PasswordFileHelper.LoadPasswordFromFile(pwdPath); }
+                    catch (Exception exPwd)
+                    {
+                        ResetDecryptUiAfterFailure("密码文件读取失败：" + (exPwd.Message ?? "请确认文件未损坏；GCM 格式 .pwd 需本机安装 .NET 8。"));
+                        return;
+                    }
+                    // 与主程序加密一致：v2 头中绑定的是「整个 .pwd 文件字节」的 SHA256，解密时必须传入
+                    try
+                    {
+                        var raw = File.ReadAllBytes(pwdPath);
+                        passwordFileHash = Compat.Sha256Hash(raw);
+                    }
+                    catch { passwordFileHash = null; }
                 }
                 else
                 {
@@ -166,7 +179,7 @@ namespace EncryptTools
 
                 var confirm = MessageBox.Show(
                     this,
-                    "警告：密码输入错误一次，将删除该程序源文件，不可恢复。\n\n你确定要解密吗？",
+                    "即将解密并尝试将文件释放到本程序所在文件夹。\n\n若密码或 .pwd 不正确将解密失败，可修改后再次尝试。",
                     "确认解密",
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Warning);
@@ -182,35 +195,76 @@ namespace EncryptTools
                 await Compat.FileWriteAllBytesAsync(tempEnc, encryptedBytes);
 
                 var outDir = Path.GetDirectoryName(_exePath) ?? Environment.CurrentDirectory;
-                var outTemp = Path.Combine(outDir, "decrypt_" + Guid.NewGuid().ToString("N") + ".tmp");
+                // 解密中间文件写到用户临时目录，避免 EXE 位于只读/受保护目录时创建失败而被误判为解密失败
+                var outTemp = Path.Combine(Path.GetTempPath(), "encryptTools_decrypt_" + Guid.NewGuid().ToString("N") + ".tmp");
 
                 var crypto = new CryptoService();
-                CryptoService.DecryptResult result;
+                CryptoService.DecryptResult result = new CryptoService.DecryptResult();
                 try
                 {
-                    result = await crypto.DecryptFileAsync(tempEnc, outTemp, password, progress: null, ct: System.Threading.CancellationToken.None);
+                    result = await crypto.DecryptFileAsync(tempEnc, outTemp, password, progress: null, ct: System.Threading.CancellationToken.None, passwordFileHash: passwordFileHash);
                 }
-                catch (NotSupportedException ex) when (ex.Message != null && (ex.Message.IndexOf("AES-GCM", StringComparison.Ordinal) >= 0 || ex.Message.IndexOf("需要", StringComparison.Ordinal) >= 0))
+                catch (NotSupportedException ex)
                 {
                     try { File.Delete(outTemp); } catch { }
-                    _lblStatus.ForeColor = Color.Firebrick;
-                    _lblStatus.Text = "该载荷为 AES-GCM 加密，当前运行环境不支持解密。";
-                    _btnDecrypt.Enabled = true;
-                    _btnBrowsePwd.Enabled = true;
-                    _cbMode.Enabled = true;
-                    _txtValue.Enabled = true;
+                    var hint = ex.Message ?? "";
+                    // NET461/.NET4.x 进程可能不支持 AesGcm：若载荷是 AES-GCM，则尝试走 GcmCli 外部进程解密。
+                    try
+                    {
+                        var (alg, originalFileName) = CryptoService.PeekEncryptedFileInfo(tempEnc);
+                        if (alg == CryptoAlgorithm.AesGcm)
+                        {
+                            bool ok = await GcmRunner.DecryptAsync(tempEnc, outTemp, password, progress: null, log: null, ct: System.Threading.CancellationToken.None);
+                            if (ok)
+                            {
+                                result = new CryptoService.DecryptResult { OriginalFileName = originalFileName };
+                                _lblStatus.ForeColor = Color.DarkGreen;
+                                _lblStatus.Text = "解密完成（AES-GCM，GcmCli 模式）。正在释放…";
+                            }
+                            else
+                            {
+                                ResetDecryptUiAfterFailure("AES-GCM 载荷需要 GcmCli 解密，但解密失败。请确认目标机可运行 dotnet/.NET 运行时。");
+                                return;
+                            }
+                        }
+                        else
+                        {
+                            ResetDecryptUiAfterFailure("当前环境不支持此加密格式：" + hint);
+                            return;
+                        }
+                    }
+                    catch
+                    {
+                        if (hint.IndexOf("AES-GCM", StringComparison.Ordinal) >= 0 || hint.IndexOf(".NET 8", StringComparison.Ordinal) >= 0 || hint.IndexOf("需要", StringComparison.Ordinal) >= 0)
+                            ResetDecryptUiAfterFailure("该载荷为 AES-GCM 加密，当前运行环境无法解密。\n" + hint);
+                        else
+                            ResetDecryptUiAfterFailure("当前环境不支持此加密格式：" + hint);
+                        return;
+                    }
+                }
+                catch (CryptographicException ex)
+                {
+                    try { File.Delete(outTemp); } catch { }
+                    var msg = ex.Message ?? "";
+                    // v2 载荷绑定了 .pwd 文件指纹：仅输入口令无法通过校验
+                    if (msg.IndexOf("缺少密码文件", StringComparison.Ordinal) >= 0 ||
+                        msg.IndexOf("密码文件指纹", StringComparison.Ordinal) >= 0)
+                    {
+                        ResetDecryptUiAfterFailure("该加密包已绑定密码文件：请切换为「密码文件」方式，并选择加密时使用的 .pwd 文件。");
+                        return;
+                    }
+                    if (msg.IndexOf("密码文件不匹配", StringComparison.Ordinal) >= 0)
+                    {
+                        ResetDecryptUiAfterFailure("所选 .pwd 与加密时不一致（文件内容指纹不同）。请换用加密时保存的那份密码文件。");
+                        return;
+                    }
+                    ResetDecryptUiAfterFailure("密码错误或密钥无法验证，请核对口令与 .pwd 后重试。");
                     return;
                 }
-                catch (CryptographicException)
+                catch (Exception ex)
                 {
                     try { File.Delete(outTemp); } catch { }
-                    FailAndSelfDelete("密码或密钥错误。");
-                    return;
-                }
-                catch (Exception)
-                {
-                    try { File.Delete(outTemp); } catch { }
-                    FailAndSelfDelete("解密失败。");
+                    ResetDecryptUiAfterFailure("解密失败：" + (ex.Message ?? ex.GetType().Name));
                     return;
                 }
                 finally
@@ -220,24 +274,14 @@ namespace EncryptTools
 
                 if (!File.Exists(outTemp))
                 {
-                    _lblStatus.ForeColor = Color.Firebrick;
-                    _lblStatus.Text = "解密未生成有效文件。";
-                    _btnDecrypt.Enabled = true;
-                    _btnBrowsePwd.Enabled = true;
-                    _cbMode.Enabled = true;
-                    _txtValue.Enabled = true;
+                    ResetDecryptUiAfterFailure("解密未生成有效文件。");
                     return;
                 }
                 long outTempLen = new FileInfo(outTemp).Length;
                 if (outTempLen == 0)
                 {
                     try { File.Delete(outTemp); } catch { }
-                    _lblStatus.ForeColor = Color.Firebrick;
-                    _lblStatus.Text = "解密结果为空文件。";
-                    _btnDecrypt.Enabled = true;
-                    _btnBrowsePwd.Enabled = true;
-                    _cbMode.Enabled = true;
-                    _txtValue.Enabled = true;
+                    ResetDecryptUiAfterFailure("解密结果为空文件。");
                     return;
                 }
 
@@ -250,23 +294,13 @@ namespace EncryptTools
                 }
                 catch (Exception ex)
                 {
-                    _lblStatus.ForeColor = Color.Firebrick;
-                    _lblStatus.Text = "释放文件失败：" + (ex.Message ?? "未知错误") + "。临时文件：" + outTemp;
-                    _btnDecrypt.Enabled = true;
-                    _btnBrowsePwd.Enabled = true;
-                    _cbMode.Enabled = true;
-                    _txtValue.Enabled = true;
+                    ResetDecryptUiAfterFailure("释放文件失败：" + (ex.Message ?? "未知错误") + "。解密结果仍保存在临时文件：" + outTemp);
                     return;
                 }
 
                 if (!File.Exists(outPath) || new FileInfo(outPath).Length == 0)
                 {
-                    _lblStatus.ForeColor = Color.Firebrick;
-                    _lblStatus.Text = "释放后文件不存在或为空。";
-                    _btnDecrypt.Enabled = true;
-                    _btnBrowsePwd.Enabled = true;
-                    _cbMode.Enabled = true;
-                    _txtValue.Enabled = true;
+                    ResetDecryptUiAfterFailure("释放后文件不存在或为空。");
                     return;
                 }
 
@@ -328,10 +362,18 @@ namespace EncryptTools
             return Path.Combine(dir, $"{baseName}({Guid.NewGuid():N}){ext}");
         }
 
-        private void FailAndSelfDelete(string reason)
+        private void ResetDecryptUiAfterFailure(string statusText)
         {
-            try { _lblStatus.Text = reason + " 程序将被删除。"; } catch { }
-            try { ScheduleSelfDeleteAndExit(_exePath); } catch { Environment.Exit(1); }
+            try
+            {
+                _lblStatus.ForeColor = Color.Firebrick;
+                _lblStatus.Text = statusText;
+                _btnDecrypt.Enabled = true;
+                _btnBrowsePwd.Enabled = true;
+                _cbMode.Enabled = true;
+                _txtValue.Enabled = true;
+            }
+            catch { }
         }
 
         private static void ScheduleSelfDeleteAndExit(string exePath)

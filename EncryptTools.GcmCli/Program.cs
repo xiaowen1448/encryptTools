@@ -9,7 +9,7 @@ namespace EncryptTools.GcmCli
         private const int BufferSize = 4 * 1024 * 1024;
         private static readonly byte[] HeaderMagic = System.Text.Encoding.ASCII.GetBytes("WXENC001");
         private const int HeaderSize = 16;
-        private const byte HeaderVersion = 1;
+        private const byte HeaderVersion = 2;
         private const byte EncryptTypeGcm = 2;
 
         private const byte PwdFormatGcm = 0x01;
@@ -72,6 +72,7 @@ namespace EncryptTools.GcmCli
                 string input = null;
                 string output = null;
                 string passwordFile = null;
+                string pwdHashFile = null;
                 for (int i = 0; i < args.Length; i++)
                 {
                     if (args[i] == "--encrypt") encrypt = true;
@@ -79,10 +80,11 @@ namespace EncryptTools.GcmCli
                     else if (args[i] == "--input" && i + 1 < args.Length) input = args[++i];
                     else if (args[i] == "--output" && i + 1 < args.Length) output = args[++i];
                     else if (args[i] == "--password-file" && i + 1 < args.Length) passwordFile = args[++i];
+                    else if (args[i] == "--pwd-hash-file" && i + 1 < args.Length) pwdHashFile = args[++i];
                 }
                 if (!encrypt.HasValue || string.IsNullOrEmpty(input) || string.IsNullOrEmpty(output) || string.IsNullOrEmpty(passwordFile))
                 {
-                    Console.Error.WriteLine("Usage: --encrypt|--decrypt --input <path> --output <path> --password-file <path>");
+                    Console.Error.WriteLine("Usage: --encrypt|--decrypt --input <path> --output <path> --password-file <path> [--pwd-hash-file <raw-bytes-file>]");
                     return 1;
                 }
                 string password = File.Exists(passwordFile) ? File.ReadAllText(passwordFile).Trim() : "";
@@ -91,8 +93,18 @@ namespace EncryptTools.GcmCli
                     Console.Error.WriteLine("Empty password.");
                     return 1;
                 }
+                byte[] pwdHash = null;
+                if (!string.IsNullOrEmpty(pwdHashFile) && File.Exists(pwdHashFile))
+                {
+                    try { pwdHash = File.ReadAllBytes(pwdHashFile); } catch { pwdHash = null; }
+                    if (pwdHash != null && pwdHash.Length > 128)
+                    {
+                        Console.Error.WriteLine("pwd-hash-file: length must be <= 128 bytes.");
+                        return 1;
+                    }
+                }
                 if (encrypt == true)
-                    DoEncrypt(input, output, password);
+                    DoEncrypt(input, output, password, pwdHash);
                 else
                     DoDecrypt(input, output, password);
                 return 0;
@@ -204,7 +216,7 @@ namespace EncryptTools.GcmCli
                 return kdf.GetBytes(keySize);
         }
 
-        static void DoEncrypt(string inputPath, string outputPath, string password)
+        static void DoEncrypt(string inputPath, string outputPath, string password, byte[]? pwdFileHash = null)
         {
             int iterations = 200_000;
             int keySizeBits = 256;
@@ -227,6 +239,18 @@ namespace EncryptTools.GcmCli
                 bw.Write(keySizeBits);
                 bw.Write(nameBytes.Length);
                 bw.Write(nameBytes);
+
+                // v2：与 CryptoService 一致，写入 .pwd 文件指纹（_SHA256 原始字节）；无绑定则写 0
+                if (HeaderVersion >= 2)
+                {
+                    if (pwdFileHash == null || pwdFileHash.Length == 0)
+                        bw.Write(0);
+                    else
+                    {
+                        bw.Write(pwdFileHash.Length);
+                        bw.Write(pwdFileHash);
+                    }
+                }
 
                 byte[] nonce = RandomNumberGenerator.GetBytes(12);
                 outFs.Write(nonce, 0, nonce.Length);
@@ -273,6 +297,20 @@ namespace EncryptTools.GcmCli
                 int nameLen = br.ReadInt32();
                 if (nameLen > 0 && nameLen < 4096)
                     br.ReadBytes(nameLen);
+
+                // 兼容 CryptoService v2 头：在 originalFileName 后面可能还带有 pwdHashLen + pwdHash
+                // GcmCli 解密本身不依赖 pwdHash，但必须跳过以便正确读取 nonce。
+                byte version = header[8];
+                if (version >= 2)
+                {
+                    int hashLen = br.ReadInt32();
+                    if (hashLen > 0)
+                    {
+                        if (hashLen < 0 || hashLen > 128)
+                            throw new InvalidDataException("pwdHash 长度无效");
+                        br.ReadBytes(hashLen);
+                    }
+                }
 
                 byte[] key = DeriveKey(password, salt, iterations, keySizeBits / 8);
                 byte[] nonce = new byte[12];

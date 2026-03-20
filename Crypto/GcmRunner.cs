@@ -140,21 +140,29 @@ namespace EncryptTools
         /// <summary>
         /// 使用 GcmCli 加密。返回 true 表示成功，false 表示未找到或执行失败。
         /// 若传入 progress，则按输出文件大小轮询上报进度（GCM 子进程无回调，用输出文件增长模拟）。
+        /// <param name="passwordFileHash">与 CryptoService v2 一致：所选 .pwd 文件的 SHA256 原始字节；无密码文件绑定则 null。</param>
         /// </summary>
-        public static async Task<bool> EncryptAsync(string inputPath, string outputPath, string password, IProgress<double> progress = null, Action<string> log = null, CancellationToken ct = default)
+        public static async Task<bool> EncryptAsync(string inputPath, string outputPath, string password, IProgress<double> progress = null, Action<string> log = null, CancellationToken ct = default, byte[] passwordFileHash = null)
         {
             string cliDir = GetGcmCliDir();
             if (string.IsNullOrEmpty(cliDir))
                 return false;
             string pwdFile = Path.Combine(Path.GetTempPath(), "encryptTools_pwd_" + Guid.NewGuid().ToString("N") + ".tmp");
+            string pwdHashFile = null;
             string dllPath = Path.Combine(cliDir, DllName);
             bool isTempDir = cliDir.IndexOf(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase) >= 0;
             try
             {
                 File.WriteAllText(pwdFile, password ?? "");
+                if (passwordFileHash != null && passwordFileHash.Length > 0)
+                {
+                    pwdHashFile = Path.Combine(Path.GetTempPath(), "encryptTools_pwdhash_" + Guid.NewGuid().ToString("N") + ".bin");
+                    File.WriteAllBytes(pwdHashFile, passwordFileHash);
+                }
+                string argHash = string.IsNullOrEmpty(pwdHashFile) ? "" : (" --pwd-hash-file \"" + pwdHashFile + "\"");
                 var psi = new ProcessStartInfo("dotnet")
                 {
-                    Arguments = "\"" + dllPath + "\" --encrypt --input \"" + inputPath + "\" --output \"" + outputPath + "\" --password-file \"" + pwdFile + "\"",
+                    Arguments = "\"" + dllPath + "\" --encrypt --input \"" + inputPath + "\" --output \"" + outputPath + "\" --password-file \"" + pwdFile + "\"" + argHash,
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     WorkingDirectory = cliDir
@@ -196,6 +204,7 @@ namespace EncryptTools
             finally
             {
                 try { if (File.Exists(pwdFile)) File.Delete(pwdFile); } catch { }
+                try { if (!string.IsNullOrEmpty(pwdHashFile) && File.Exists(pwdHashFile)) File.Delete(pwdHashFile); } catch { }
                 if (isTempDir) try { Directory.Delete(cliDir, true); } catch { }
             }
         }

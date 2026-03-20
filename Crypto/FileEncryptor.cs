@@ -95,7 +95,7 @@ namespace EncryptTools
                     {
                         long currentFileLen = new FileInfo(file).Length;
                         IProgress<double> gcmProgress = progress == null ? null : new GcmToOverallProgress(progress, () => processed, totalBytes, currentFileLen);
-                        bool ok = await GcmRunner.EncryptAsync(file, outFile, _options.Password, gcmProgress, _options.Log, ct).ConfigureAwait(false);
+                        bool ok = await GcmRunner.EncryptAsync(file, outFile, _options.Password, gcmProgress, _options.Log, ct, _options.PasswordFileHash).ConfigureAwait(false);
                         if (!ok)
                         {
                             _options.Log?.Invoke($"加密失败，跳过: {file}（GCM 执行失败，可改用 AES-128-CBC）");
@@ -123,7 +123,7 @@ namespace EncryptTools
                         {
                             long retryFileLen = new FileInfo(file).Length;
                             IProgress<double> gcmProgressRetry = progress == null ? null : new GcmToOverallProgress(progress, () => processed, totalBytes, retryFileLen);
-                            bool ok = await GcmRunner.EncryptAsync(file, outFile, _options.Password, gcmProgressRetry, _options.Log, ct).ConfigureAwait(false);
+                            bool ok = await GcmRunner.EncryptAsync(file, outFile, _options.Password, gcmProgressRetry, _options.Log, ct, _options.PasswordFileHash).ConfigureAwait(false);
                             if (!ok) { _options.Log?.Invoke($"仍被占用或失败，跳过: {file}"); continue; }
                             processed += retryFileLen;
                             progress?.Report(totalBytes == 0 ? 1.0 : (double)processed / totalBytes);

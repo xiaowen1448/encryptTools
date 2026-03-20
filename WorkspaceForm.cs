@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Diagnostics;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
@@ -1438,6 +1439,20 @@ namespace EncryptTools
             catch { return 0; }
         }
 
+        /// <summary>封装可运行 EXE 时使用当前进程主程序为壳（不做 dotnet publish 单文件模板）。</summary>
+        private static string GetPackExeTemplatePath(Action<string> log)
+        {
+            try
+            {
+                var path = Application.ExecutablePath;
+                if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                    return path;
+            }
+            catch { }
+            log($"[{DateTime.Now:HH:mm:ss}] 封装EXE失败：无法取得当前程序路径。");
+            return string.Empty;
+        }
+
         private async Task ExecuteEncryptWorkspace(WorkspaceContext ctx)
         {
             try
@@ -1460,9 +1475,12 @@ namespace EncryptTools
                     return;
                 }
                 var pwdPath = GetSelectedPwdFilePath(ctx);
+                bool packExe = ctx.ChkPackExe?.Checked ?? false;
+                // 可运行 exe 常在 net48 环境解密：将 .pwd 规范为 CBC，且哈希须在改写后计算
+                if (packExe && PasswordFileHelper.EnsurePwdFileCbcForPortableExe(pwdPath))
+                    ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已为封装 EXE 将密码文件升级为兼容格式（AES-CBC/.pwd）。{Environment.NewLine}");
                 var pwdHash = TryComputePwdFileHash(pwdPath);
 
-                bool packExe = ctx.ChkPackExe?.Checked ?? false;
                 bool inPlace = ctx.ChkOverwrite?.Checked ?? false;
                 var algorithm = MapAlgorithm(ctx.CbAlgo);
                 var encryptedExt = GetSelectedEncryptedExtension(ctx.CbSuffix, algorithm);
@@ -1488,6 +1506,10 @@ namespace EncryptTools
                     }
                     catch { }
                 });
+
+                string packExeTemplate = "";
+                if (packExe)
+                    packExeTemplate = GetPackExeTemplatePath(log);
 
                 string commonOutputRoot;
                 if (inPlace)
@@ -1530,11 +1552,10 @@ namespace EncryptTools
 
                     if (packExe)
                     {
-                        var template = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "encryptTools.self.exe");
-                        if (!File.Exists(template)) template = Application.ExecutablePath;
+                        var template = packExeTemplate;
                         if (string.IsNullOrWhiteSpace(template) || !File.Exists(template))
                         {
-                            log($"[{DateTime.Now:HH:mm:ss}] 封装EXE失败：未找到模板 encryptTools.self.exe 或当前程序。");
+                            log($"[{DateTime.Now:HH:mm:ss}] 封装EXE失败：模板不存在或无效。");
                             continue;
                         }
 
@@ -1586,7 +1607,7 @@ namespace EncryptTools
                                 if (packUseGcm)
                                 {
                                     // GCM 走外部进程：用输出文件增长轮询模拟进度
-                                    bool ok = await GcmRunner.EncryptAsync(oneFile, tmpEnc, password, packProgress, m => log($"[{DateTime.Now:HH:mm:ss}] {m}")).ConfigureAwait(false);
+                                    bool ok = await GcmRunner.EncryptAsync(oneFile, tmpEnc, password, packProgress, m => log($"[{DateTime.Now:HH:mm:ss}] {m}"), CancellationToken.None, pwdHash).ConfigureAwait(false);
                                     if (!ok) { log($"[{DateTime.Now:HH:mm:ss}] 封装EXE失败: GCM 加密失败"); continue; }
                                 }
                                 else

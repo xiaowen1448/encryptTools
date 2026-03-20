@@ -20,18 +20,33 @@ namespace EncryptTools
             if (string.IsNullOrWhiteSpace(password)) throw new ArgumentException("password is empty", nameof(password));
             if (string.IsNullOrWhiteSpace(filePath)) throw new ArgumentException("filePath is empty", nameof(filePath));
 
-            // 优先生成“旧版 AES-GCM 无格式字节” pwd：key(32)+nonce(12)+tag(16)+ciphertext
-#if NET46 || NET48
-            if (RuntimeHelper.IsNet8InstalledOnMachine)
-            {
-                if (GcmRunner.EncryptPasswordFile(filePath, password))
-                    return;
-            }
-            // 未安装 .NET 8 时无法生成旧版 GCM 格式；退回为 CBC 带格式字节，至少保证本程序可读
+            // 兼容性优先：统一保存为 CBC（带格式字节 0x02）。
+            // 这样在 net461/net48/无 .NET8 的环境里也能直接读取，不依赖 EncryptTools.GcmCli.dll。
             SavePasswordToFileCbcWithFormat(password, filePath);
-#else
-            SavePasswordToFileLegacyGcmNoFormat(password, filePath);
-#endif
+        }
+
+        /// <summary>
+        /// 封装为可运行 exe 时使用：若当前 .pwd 为 GCM/旧版格式，则就地改写为带 0x02 的 AES-CBC 格式。
+        /// 便于目标机在仅 net48、未装 .NET 8 时也能用托管代码解密密码文件；若已是 CBC 格式则不变。
+        /// 改写后需重新计算文件字节 SHA256 再写入加密包头（调用方在改写之后取哈希）。
+        /// </summary>
+        /// <returns>true 表示已升级为 CBC；false 表示无需改动或升级失败。</returns>
+        public static bool EnsurePwdFileCbcForPortableExe(string? pwdFilePath)
+        {
+            if (string.IsNullOrWhiteSpace(pwdFilePath) || !File.Exists(pwdFilePath)) return false;
+            byte[] data;
+            try { data = File.ReadAllBytes(pwdFilePath); } catch { return false; }
+            if (data.Length >= 1 && data[0] == FormatCbc) return false;
+            try
+            {
+                string plain = LoadPasswordFromFile(pwdFilePath);
+                SavePasswordToFile(plain, pwdFilePath);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         public static string LoadPasswordFromFile(string filePath)
@@ -70,13 +85,12 @@ namespace EncryptTools
             if (first == FormatGcm)
             {
 #if NET46 || NET48
-                if (RuntimeHelper.IsNet8InstalledOnMachine)
-                {
-                    string pwd = GcmRunner.DecryptPasswordFile(filePath);
-                    if (!string.IsNullOrEmpty(pwd))
-                        return pwd;
-                }
-                throw new NotSupportedException("此密码文件为 GCM 格式，请安装 .NET 8 后使用；若已安装 .NET 8，请确保程序目录下存在 EncryptTools.GcmCli.dll。");
+                // 由 GcmCli 解密，避免当前进程缺少 AesGcm。
+                // 若环境无法执行 GcmCli，则抛出明确提示。
+                string pwd = GcmRunner.DecryptPasswordFile(filePath);
+                if (!string.IsNullOrEmpty(pwd))
+                    return pwd;
+                throw new NotSupportedException("此密码文件为 GCM 格式：需要可执行 EncryptTools.GcmCli.dll（dotnet 运行时环境）。");
 #else
                 if (data.Length < 1 + 32 + 12 + 16) throw new InvalidDataException("密码文件格式不正确");
                 var key = new byte[32];
@@ -100,13 +114,10 @@ namespace EncryptTools
             if (data.Length >= 60)
             {
 #if NET46 || NET48
-                if (RuntimeHelper.IsNet8InstalledOnMachine)
-                {
-                    string pwd = GcmRunner.DecryptPasswordFile(filePath);
-                    if (!string.IsNullOrEmpty(pwd))
-                        return pwd;
-                }
-                throw new NotSupportedException("此密码文件为旧版 GCM 格式，请安装 .NET 8 后使用；若已安装 .NET 8，请确保程序目录下存在 EncryptTools.GcmCli.dll。");
+                string pwd = GcmRunner.DecryptPasswordFile(filePath);
+                if (!string.IsNullOrEmpty(pwd))
+                    return pwd;
+                throw new NotSupportedException("此密码文件为旧版 GCM 格式：需要可执行 EncryptTools.GcmCli.dll（dotnet 运行时环境）。");
 #else
                 var key = new byte[32];
                 var nonce = new byte[12];
