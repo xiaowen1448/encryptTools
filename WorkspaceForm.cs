@@ -1590,6 +1590,22 @@ namespace EncryptTools
                             }
                             try { Directory.CreateDirectory(Path.GetDirectoryName(outExe) ?? outDir); } catch { }
 
+                            // 源文件本身已是带载荷的封装 exe：避免重复封装；inPlace 下同路径会 Write 后 Delete 把成品删掉
+                            if (string.Equals(Path.GetExtension(oneFile), ".exe", StringComparison.OrdinalIgnoreCase) && ExePayload.HasPayload(oneFile))
+                            {
+                                log($"[{DateTime.Now:HH:mm:ss}] 已是封装EXE，跳过: {oneFile}");
+                                UpdateFileListItemPathStatus(ctx.FileListView, oneFile, oneFile, "已封装EXE");
+                                continue;
+                            }
+
+                            // 目标封装产物已存在（非随机名）：视为已加密，不重复处理
+                            if (!useRandomExeName && File.Exists(outExe) && ExePayload.HasPayload(outExe))
+                            {
+                                log($"[{DateTime.Now:HH:mm:ss}] 已存在封装EXE，跳过: {outExe}");
+                                UpdateFileListItemPathStatus(ctx.FileListView, oneFile, outExe, "已封装EXE");
+                                continue;
+                            }
+
                             log($"[{DateTime.Now:HH:mm:ss}] 开始封装EXE: {oneFile} -> {outExe}");
                             var tmpEnc = Path.Combine(Path.GetTempPath(), "encryptTools_pack_" + Guid.NewGuid().ToString("N") + ".enc");
                             try
@@ -1637,8 +1653,14 @@ namespace EncryptTools
                                 {
                                     try
                                     {
-                                        File.Delete(oneFile);
-                                        log($"[{DateTime.Now:HH:mm:ss}] 已删除源文件: {oneFile}");
+                                        var fullSrc = Path.GetFullPath(oneFile);
+                                        var fullOut = Path.GetFullPath(outExe);
+                                        // 源与输出为同一文件时禁止删除（否则会删掉刚写入的封装 exe）
+                                        if (!string.Equals(fullSrc, fullOut, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            File.Delete(oneFile);
+                                            log($"[{DateTime.Now:HH:mm:ss}] 已删除源文件: {oneFile}");
+                                        }
                                     }
                                     catch (Exception exDel)
                                     {

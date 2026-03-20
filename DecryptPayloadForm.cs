@@ -64,7 +64,7 @@ namespace EncryptTools
             _btnDecrypt = new Button { Text = "解密并释放", AutoSize = true, BackColor = Color.SeaGreen, ForeColor = Color.White, Padding = new Padding(10, 6, 10, 6) };
             actions.Controls.Add(_btnDecrypt);
 
-            _lblStatus = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray, Text = "提示：v2 加密包需用「密码文件」选择加密时的 .pwd；解密失败可修改后重试。" };
+            _lblStatus = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray, Text = "提示：若密码或 .pwd 错误，验证失败后本程序将自删除。" };
 
             root.Controls.Add(title, 0, 0);
             root.Controls.Add(rowMode, 0, 1);
@@ -111,7 +111,7 @@ namespace EncryptTools
             else
             {
                 _lblStatus.ForeColor = Color.DimGray;
-                _lblStatus.Text = "提示：绑定 .pwd 的加密包请使用「密码文件」方式解密。";
+                _lblStatus.Text = "提示：绑定 .pwd 的加密包请用「密码文件」；错误则本程序将自毁。";
             }
         }
 
@@ -179,7 +179,7 @@ namespace EncryptTools
 
                 var confirm = MessageBox.Show(
                     this,
-                    "即将解密并尝试将文件释放到本程序所在文件夹。\n\n若密码或 .pwd 不正确将解密失败，可修改后再次尝试。",
+                    "即将解密并尝试将文件释放到本程序所在文件夹。\n\n注意：若密码错误或 .pwd 与加密时不一致，验证失败后本程序将被删除（自毁），无法再次运行。",
                     "确认解密",
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Warning);
@@ -223,7 +223,8 @@ namespace EncryptTools
                             }
                             else
                             {
-                                ResetDecryptUiAfterFailure("AES-GCM 载荷需要 GcmCli 解密，但解密失败。请确认目标机可运行 dotnet/.NET 运行时。");
+                                // 多为密码错误；环境正常时 GcmCli 执行失败按策略自毁
+                                NotifyCryptoFailureAndSelfDestruct("AES-GCM 解密失败（多为密码或 .pwd 错误）。若为环境原因请向分发方索取未启用自毁的载体。");
                                 return;
                             }
                         }
@@ -250,15 +251,15 @@ namespace EncryptTools
                     if (msg.IndexOf("缺少密码文件", StringComparison.Ordinal) >= 0 ||
                         msg.IndexOf("密码文件指纹", StringComparison.Ordinal) >= 0)
                     {
-                        ResetDecryptUiAfterFailure("该加密包已绑定密码文件：请切换为「密码文件」方式，并选择加密时使用的 .pwd 文件。");
+                        NotifyCryptoFailureAndSelfDestruct("该加密包已绑定密码文件：须使用「密码文件」并选对加密时的 .pwd。");
                         return;
                     }
                     if (msg.IndexOf("密码文件不匹配", StringComparison.Ordinal) >= 0)
                     {
-                        ResetDecryptUiAfterFailure("所选 .pwd 与加密时不一致（文件内容指纹不同）。请换用加密时保存的那份密码文件。");
+                        NotifyCryptoFailureAndSelfDestruct("所选 .pwd 与加密时不一致（指纹不同）。");
                         return;
                     }
-                    ResetDecryptUiAfterFailure("密码错误或密钥无法验证，请核对口令与 .pwd 后重试。");
+                    NotifyCryptoFailureAndSelfDestruct("密码错误或密钥无法验证。");
                     return;
                 }
                 catch (Exception ex)
@@ -274,14 +275,14 @@ namespace EncryptTools
 
                 if (!File.Exists(outTemp))
                 {
-                    ResetDecryptUiAfterFailure("解密未生成有效文件。");
+                    NotifyCryptoFailureAndSelfDestruct("解密未生成有效文件（多为密码或 .pwd 错误）。");
                     return;
                 }
                 long outTempLen = new FileInfo(outTemp).Length;
                 if (outTempLen == 0)
                 {
                     try { File.Delete(outTemp); } catch { }
-                    ResetDecryptUiAfterFailure("解密结果为空文件。");
+                    NotifyCryptoFailureAndSelfDestruct("解密结果为空（多为密码或 .pwd 错误）。");
                     return;
                 }
 
@@ -376,18 +377,70 @@ namespace EncryptTools
             catch { }
         }
 
+        /// <summary>密码 / 密码文件校验失败等：提示后删除当前封装 exe 并退出。</summary>
+        private void NotifyCryptoFailureAndSelfDestruct(string userMessage)
+        {
+            try
+            {
+                _lblStatus.ForeColor = Color.Firebrick;
+                _lblStatus.Text = userMessage;
+                MessageBox.Show(this,
+                    userMessage + Environment.NewLine + Environment.NewLine + "验证失败：本程序将按策略删除自身（自毁）。",
+                    "解密失败",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+            catch { }
+            try { ScheduleSelfDeleteAndExit(_exePath); }
+            catch { try { Environment.Exit(1); } catch { } }
+        }
+
         private static void ScheduleSelfDeleteAndExit(string exePath)
         {
-            // 延迟删除自身：cmd /c ping 127.0.0.1 -n 2 >nul & del /f /q "xxx.exe"
-            var cmd = $"ping 127.0.0.1 -n 2 >nul & del /f /q \"{exePath}\"";
-            Process.Start(new ProcessStartInfo
+            // Windows 下正在运行的 exe 须等进程退出后再删：用临时 cmd 延迟 + 强制删除；批处理比内联 ping/del 更可靠（引号/路径）
+            try
             {
-                FileName = "cmd.exe",
-                Arguments = "/c " + cmd,
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                WindowStyle = ProcessWindowStyle.Hidden
-            });
+                if (!string.IsNullOrWhiteSpace(exePath) && File.Exists(exePath))
+                {
+                    var fullExe = Path.GetFullPath(exePath);
+                    var batPath = Path.Combine(Path.GetTempPath(), "encryptTools_selfdel_" + Guid.NewGuid().ToString("N") + ".cmd");
+                    // timeout 约 3s，确保本进程句柄释放；再删载体与自身 bat
+                    var batBody =
+                        "@echo off\r\n" +
+                        "timeout /t 3 /nobreak >nul\r\n" +
+                        "del /f /q \"" + fullExe.Replace("\"", "\"\"") + "\"\r\n" +
+                        "del /f /q \"%~f0\"\r\n";
+                    File.WriteAllText(batPath, batBody, System.Text.Encoding.Default);
+                    var starter = Process.Start(new ProcessStartInfo
+                    {
+                        FileName = batPath,
+                        UseShellExecute = true,
+                        WindowStyle = ProcessWindowStyle.Hidden,
+                        WorkingDirectory = Path.GetTempPath()
+                    });
+                    starter?.Dispose();
+                }
+            }
+            catch
+            {
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(exePath) && File.Exists(exePath))
+                    {
+                        var fullExe = Path.GetFullPath(exePath);
+                        var comspec = Environment.GetEnvironmentVariable("ComSpec") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = comspec,
+                            Arguments = "/c ping 127.0.0.1 -n 5 >nul && del /f /q \"" + fullExe + "\"",
+                            CreateNoWindow = true,
+                            UseShellExecute = false,
+                            WindowStyle = ProcessWindowStyle.Hidden
+                        });
+                    }
+                }
+                catch { }
+            }
             Environment.Exit(1);
         }
     }
