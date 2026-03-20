@@ -18,6 +18,13 @@ namespace EncryptTools.Ui
     /// </summary>
     public sealed class ImageWorkspacePanel : UserControl
     {
+        private const int IconThumbSize = 16;
+        private const int IconRowHeight = 16;
+        // 下拉时默认展示的行数（>=10），其余由列表滚动
+        private const int IconVisibleItems = 12;
+        private const int IconDropdownMaxWidth = 220;
+        private readonly Dictionary<string, Image> _iconThumbCache = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
+
         private readonly Action<string> _log;
         private readonly Action<double>? _reportProgress;
         private readonly List<string> _imagePaths = new List<string>();
@@ -88,10 +95,62 @@ namespace EncryptTools.Ui
             _cbPwdFiles = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(100, 0), MaximumSize = new Size(comboMaxW, 0), Width = 120 };
             _cbPwdFiles.DropDown += (_, __) => SetComboDropDownWidth(_cbPwdFiles, comboMaxW);
             _chkIconOverlay = new CheckBox { Text = "图标覆盖", AutoSize = true, Margin = new Padding(4, 6, 4, 0), Checked = true };
-            int btnHeight = 24;
             _cbIcons = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(0, 0, 4, 0), MinimumSize = new Size(100, 0), MaximumSize = new Size(comboMaxW, 0), Width = 120 };
-            _cbIcons.DropDown += (_, __) => SetComboDropDownWidth(_cbIcons, comboMaxW);
-            var picIconThumb = new PictureBox { Size = new Size(btnHeight, btnHeight), SizeMode = PictureBoxSizeMode.Zoom, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 4, 8, 4), BackColor = SystemColors.Window };
+            // 需要在下拉项里同时显示“文件名 + 缩略图”，因此启用 OwnerDraw 并限制下拉高度以保证可滚动
+            _cbIcons.DrawMode = DrawMode.OwnerDrawFixed;
+            _cbIcons.ItemHeight = IconRowHeight;
+            // 保证下拉列表与行高一致，不出现裁剪/风格不一致
+            _cbIcons.IntegralHeight = true;
+            _cbIcons.MaxDropDownItems = IconVisibleItems;
+            _cbIcons.DropDownHeight = IconRowHeight * IconVisibleItems + 2;
+            // 下拉宽度固定为控件宽度，避免长文件名把下拉窗体撑宽
+            _cbIcons.DropDown += (_, __) => _cbIcons.DropDownWidth = _cbIcons.Width;
+
+            _cbIcons.DrawItem += (_, e) =>
+            {
+                try
+                {
+                    if (e.Index < 0 || e.Index >= _cbIcons.Items.Count) return;
+                    var itemText = _cbIcons.Items[e.Index]?.ToString() ?? "";
+                    e.DrawBackground();
+
+                    var bounds = e.Bounds;
+                    // 未选择项不显示缩略图
+                    if (!string.IsNullOrWhiteSpace(itemText) && string.Equals(itemText, "(未选择)", StringComparison.OrdinalIgnoreCase))
+                    {
+                        TextRenderer.DrawText(e.Graphics, itemText, e.Font, bounds, e.ForeColor);
+                        return;
+                    }
+
+                    // 缩略图位于左侧
+                    var full = Path.Combine(GetIcoDirectory(), itemText);
+                    if (!string.IsNullOrWhiteSpace(itemText) && File.Exists(full))
+                    {
+                        var thumb = GetOrLoadIconThumb(full);
+                        if (thumb != null)
+                        {
+                            var th = IconThumbSize;
+                            var x = bounds.Left + 4;
+                            var y = bounds.Top + (bounds.Height - th) / 2;
+                            e.Graphics.DrawImage(thumb, new Rectangle(x, y, th, th));
+                            var left = bounds.Left + th + 10;
+                            var width = Math.Max(10, bounds.Width - (th + 10));
+                            var textRect = new Rectangle(left, bounds.Top, width, bounds.Height);
+                            TextRenderer.DrawText(e.Graphics, itemText, e.Font, textRect, e.ForeColor,
+                                TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+                            return;
+                        }
+                    }
+
+                    // 兜底：只画文字
+                    TextRenderer.DrawText(e.Graphics, itemText, e.Font, bounds, e.ForeColor,
+                        TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+                }
+                catch
+                {
+                    // 忽略绘制异常，避免卡死 UI
+                }
+            };
             _numOverlayOpacity = new NumericUpDown { Minimum = 1, Maximum = 100, Value = 80, Width = 44, Margin = new Padding(2, 4, 4, 4) };
             _cbIconBlock = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(56, 0), MaximumSize = new Size(comboMaxW, 0), Width = 72 };
             _cbIconBlock.Items.AddRange(new object[] { "8×8", "16×16", "24×24", "32×32", "48×48", "64×64", "96×96", "128×128" });
@@ -124,10 +183,11 @@ namespace EncryptTools.Ui
             };
             // 图标覆盖选择框后：导入图标按钮 -> 图标下拉 -> 图标预览
             iconRow.Controls.Add(btnImportIcons);
+            // 图标下拉框尺寸与按钮一致（保持高度/宽度一致），避免 OwnerDraw 后控件高度变大
+            _cbIcons.Width = btnImportIcons.Width;
+            _cbIcons.Height = btnImportIcons.Height;
+            _cbIcons.DropDownWidth = _cbIcons.Width;
             iconRow.Controls.Add(_cbIcons);
-            // 图标预览放在下拉框后面
-            picIconThumb.Margin = new Padding(0, 0, 4, 0);
-            iconRow.Controls.Add(picIconThumb);
             toolbar.Controls.Add(iconRow);
             toolbar.Controls.Add(new Label { Text = "透明度%:", AutoSize = true, Margin = new Padding(4, 8, 2, 0) });
             toolbar.Controls.Add(_numOverlayOpacity);
@@ -244,18 +304,10 @@ namespace EncryptTools.Ui
                 {
                     var full = Path.Combine(GetIcoDirectory(), name);
                     _customIconPaths = File.Exists(full) ? new List<string> { full } : new List<string>();
-                    try
-                    {
-                        picIconThumb.Image?.Dispose();
-                        picIconThumb.Image = File.Exists(full) ? Image.FromFile(full) : null;
-                    }
-                    catch { picIconThumb.Image = null; }
                 }
                 else
                 {
                     _customIconPaths = new List<string>();
-                    picIconThumb.Image?.Dispose();
-                    picIconThumb.Image = null;
                 }
             };
 
@@ -450,6 +502,9 @@ namespace EncryptTools.Ui
                     .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
                     .ToArray();
 
+                // 刷新图标列表时清理缩略图缓存，避免缓存爆内存/旧图占用文件句柄
+                ClearIconThumbCache();
+
                 _cbIcons.BeginUpdate();
                 _cbIcons.Items.Clear();
                 _cbIcons.Items.Add("(未选择)");
@@ -468,9 +523,67 @@ namespace EncryptTools.Ui
                     }
                 }
                 if (_cbIcons.SelectedIndex < 0) _cbIcons.SelectedIndex = 0;
-                SetComboDropDownWidth(_cbIcons, 140);
+                // 下拉宽度固定，避免文件名过长导致下拉窗体过宽
+                _cbIcons.DropDownWidth = _cbIcons.Width;
             }
             catch { }
+        }
+
+        private void ClearIconThumbCache()
+        {
+            try
+            {
+                foreach (var kv in _iconThumbCache)
+                {
+                    try { kv.Value.Dispose(); } catch { }
+                }
+            }
+            catch { }
+            _iconThumbCache.Clear();
+        }
+
+        private Image? GetOrLoadIconThumb(string fullIcoPath)
+        {
+            if (string.IsNullOrWhiteSpace(fullIcoPath)) return null;
+            try
+            {
+                if (_iconThumbCache.TryGetValue(fullIcoPath, out var cached) && cached != null)
+                    return cached;
+
+                if (!File.Exists(fullIcoPath)) return null;
+
+                // 用流读取避免 FromFile 锁定原文件句柄；再克隆成可独立释放的 Bitmap
+                using (var fs = new FileStream(fullIcoPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var img = Image.FromStream(fs))
+                using (var bmp = new Bitmap(IconThumbSize, IconThumbSize))
+                {
+                    using (var g = Graphics.FromImage(bmp))
+                    {
+                        g.Clear(Color.Transparent);
+                        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+                        g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+
+                        var src = img.Size;
+                        if (src.Width <= 0 || src.Height <= 0) return null;
+                        float r = Math.Min((float)IconThumbSize / src.Width, (float)IconThumbSize / src.Height);
+                        int w = Math.Max(1, (int)(src.Width * r));
+                        int h = Math.Max(1, (int)(src.Height * r));
+                        int x = (IconThumbSize - w) / 2;
+                        int y = (IconThumbSize - h) / 2;
+                        g.DrawImage(img, x, y, w, h);
+                    }
+
+                    // 缓存一份，后续 DrawItem 复用
+                    var cloned = new Bitmap(bmp);
+                    _iconThumbCache[fullIcoPath] = cloned;
+                    return cloned;
+                }
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private async Task RunDecryptAsync()
