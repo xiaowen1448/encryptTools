@@ -1,8 +1,30 @@
-/bin
-/.vscode
-/obj
-/publish
-/publish_r2r
-/publish-framework-dependent
-/publish-single-file-win-x64
-/dist
+# Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ist/
+publish/
+publish_r2r/
+publish-framework-dependent/
+publish-single-file-win-x64/
+
+# NuGet
+*.nupkg
+*.snupkg
+**/packages/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.sln.docstates
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Misc
+*.log

@@ -1,24 +1,40 @@
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.5.2.0
+VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EncryptTools", "EncryptTools.csproj", "{9CCE430A-C573-4728-EBE4-443D27A39E80}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EncryptTools.FrameworkDependent", "EncryptTools.FrameworkDependent.csproj", "{16330DD0-6DED-46EE-B436-14D4A0A098FA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EncryptTools.Core", "EncryptTools.Core\EncryptTools.Core.csproj", "{3C0642DC-47C5-4C1E-945C-8A21F3AE5B96}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EncryptTools.Desktop", "EncryptTools.Desktop\EncryptTools.Desktop.csproj", "{13609F13-E8BE-4D8F-AC07-06157FCC8A06}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EncryptTools.GcmCli", "EncryptTools.GcmCli\EncryptTools.GcmCli.csproj", "{93B48D21-4582-4FBD-A52A-DA09B83744EF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
-	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{9CCE430A-C573-4728-EBE4-443D27A39E80}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{9CCE430A-C573-4728-EBE4-443D27A39E80}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{9CCE430A-C573-4728-EBE4-443D27A39E80}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{9CCE430A-C573-4728-EBE4-443D27A39E80}.Release|Any CPU.Build.0 = Release|Any CPU
-	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
-	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {4860763A-9777-4E22-90E2-55F2768BA416}
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{16330DD0-6DED-46EE-B436-14D4A0A098FA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{16330DD0-6DED-46EE-B436-14D4A0A098FA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{16330DD0-6DED-46EE-B436-14D4A0A098FA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{16330DD0-6DED-46EE-B436-14D4A0A098FA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3C0642DC-47C5-4C1E-945C-8A21F3AE5B96}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3C0642DC-47C5-4C1E-945C-8A21F3AE5B96}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3C0642DC-47C5-4C1E-945C-8A21F3AE5B96}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3C0642DC-47C5-4C1E-945C-8A21F3AE5B96}.Release|Any CPU.Build.0 = Release|Any CPU
+		{13609F13-E8BE-4D8F-AC07-06157FCC8A06}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{13609F13-E8BE-4D8F-AC07-06157FCC8A06}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{13609F13-E8BE-4D8F-AC07-06157FCC8A06}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{13609F13-E8BE-4D8F-AC07-06157FCC8A06}.Release|Any CPU.Build.0 = Release|Any CPU
+		{93B48D21-4582-4FBD-A52A-DA09B83744EF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{93B48D21-4582-4FBD-A52A-DA09B83744EF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{93B48D21-4582-4FBD-A52A-DA09B83744EF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{93B48D21-4582-4FBD-A52A-DA09B83744EF}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
