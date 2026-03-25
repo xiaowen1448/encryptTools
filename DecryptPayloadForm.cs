@@ -61,7 +61,7 @@ namespace EncryptTools
             rowMode.Controls.Add(_btnBrowsePwd, 3, 0);
 
             var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, WrapContents = false };
-            _btnDecrypt = new Button { Text = "解密并释放", AutoSize = true, BackColor = Color.SeaGreen, ForeColor = Color.White, Padding = new Padding(10, 6, 10, 6) };
+            _btnDecrypt = new Button { Text = "解密并释放", AutoSize = true,  Padding = new Padding(10, 6, 10, 6) };
             actions.Controls.Add(_btnDecrypt);
 
             _lblStatus = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray, Text = "提示：若密码或 .pwd 错误，验证失败后本程序将自删除。" };

@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -21,6 +22,7 @@ namespace EncryptTools
     public sealed class WorkspaceForm : Form
     {
         private MenuStrip _menu = null!;
+        private WinControlButton _btnMaxRestore = null!;
         private StatusStrip _status = null!;
         private ToolStripStatusLabel _statusLeft = null!;
         private ToolStripStatusLabel _statusRight = null!;
@@ -89,17 +91,36 @@ namespace EncryptTools
 
         private void InitializeComponent()
         {
-            Text = "encryptTools - 工作区";
+            Text = "encryptTools";
+            FormBorderStyle = FormBorderStyle.None;
+            DoubleBuffered = true;
             StartPosition = FormStartPosition.CenterScreen;
             Size = new Size(950, 680);
             MinimumSize = new Size(900, 600);
             Font = new Font("Microsoft YaHei UI", 9F);
 
-            // 顶部菜单
+            // 顶部菜单栏（logo + 菜单 + 窗口按钮，全部在同一行）
             _menu = new MenuStrip
             {
-                Dock = DockStyle.Top
+                Dock = DockStyle.Top,
+                Padding = new Padding(6, 2, 0, 2),
+                BackColor = Color.FromArgb(240, 240, 240),
+                Font = new Font("Microsoft YaHei UI", 9.5F)
             };
+            _menu.MouseDown += TitleBar_MouseDown;
+
+            // Logo 图标（双击切换最大化/还原）
+            var logoLabel = new ToolStripLabel { Padding = new Padding(2, 0, 12, 0) };
+            try
+            {
+                var ico = LoadAppIcon();
+                if (ico != null)
+                    logoLabel.Image = ico.ToBitmap().GetThumbnailImage(22, 22, null, IntPtr.Zero) as Image;
+            }
+            catch { }
+            logoLabel.DoubleClick += (_, __) => ToggleMaximize();
+            _menu.Items.Add(logoLabel);
+
             var fileMenu = new ToolStripMenuItem("文件(&F)");
 
             var miNewParent = new ToolStripMenuItem("新建工作区(&N)")
@@ -135,6 +156,42 @@ namespace EncryptTools
             _menu.Items.Add(fileMenu);
             _menu.Items.Add(editMenu);
             _menu.Items.Add(helpMenu);
+
+            // 窗口控制按钮（右对齐，自绘保证图标大小一致）
+            var btnSize = new Size(46, 30);
+            var btnMargin = new Padding(0);
+
+            var btnClose = new WinControlButton(WinControlButton.ButtonKind.Close)
+            {
+                Alignment = ToolStripItemAlignment.Right,
+                AutoSize = false,
+                Size = btnSize,
+                Margin = btnMargin
+            };
+            btnClose.Click += (_, __) => Close();
+
+            _btnMaxRestore = new WinControlButton(WinControlButton.ButtonKind.Maximize)
+            {
+                Alignment = ToolStripItemAlignment.Right,
+                AutoSize = false,
+                Size = btnSize,
+                Margin = btnMargin
+            };
+            _btnMaxRestore.Click += (_, __) => ToggleMaximize();
+
+            var btnMin = new WinControlButton(WinControlButton.ButtonKind.Minimize)
+            {
+                Alignment = ToolStripItemAlignment.Right,
+                AutoSize = false,
+                Size = btnSize,
+                Margin = btnMargin
+            };
+            btnMin.Click += (_, __) => { WindowState = FormWindowState.Minimized; };
+
+            _menu.Items.Add(btnClose);
+            _menu.Items.Add(_btnMaxRestore);
+            _menu.Items.Add(btnMin);
+
             MainMenuStrip = _menu;
             Controls.Add(_menu);
 
@@ -146,7 +203,7 @@ namespace EncryptTools
                 SplitterWidth = 4
             };
             _vertSplit.SplitterDistance = 420;
-            _vertSplit.Panel1.Padding = new Padding(0, 16, 0, 0); // 菜单栏与工作区 Tab 之间留出间隔
+            _vertSplit.Panel1.Padding = Padding.Empty;
 
             // 上：TabControl 工作区
             _tabWorkspaces = new TabControl
@@ -155,11 +212,14 @@ namespace EncryptTools
                 Appearance = TabAppearance.Normal,
                 Multiline = false,
                 Alignment = TabAlignment.Top,
-                SizeMode = TabSizeMode.Fixed,
-                ItemSize = new Size(90, 32),
-                HotTrack = true
+                HotTrack = true,
+                Font = new Font("Microsoft YaHei UI", 9.5F)
             };
-            _tabWorkspaces.Padding = new Point(12, 6); // 与文件加密解密工具栏按钮高度接近
+            _tabWorkspaces.Padding = new Point(12, 4);
+            _tabWorkspaces.DrawMode = TabDrawMode.OwnerDrawFixed;
+            _tabWorkspaces.SizeMode = TabSizeMode.Fixed;
+            _tabWorkspaces.ItemSize = new Size(110, 30);
+            _tabWorkspaces.DrawItem += TabWorkspaces_DrawItem;
             _tabWorkspaces.MouseUp += TabWorkspaces_MouseUp;
 
             // 默认欢迎工作区
@@ -172,7 +232,7 @@ namespace EncryptTools
             {
                 Text = "快速加密 / 解密",
                 AutoSize = true,
-                Font = new Font("Microsoft YaHei UI", 28f, FontStyle.Bold),
+                Font = new Font("Microsoft YaHei UI", 18f, FontStyle.Bold),
                 Location = new Point(40, 40)
             };
             var subtitle = new Label
@@ -239,9 +299,6 @@ namespace EncryptTools
 
             _vertSplit.Panel2.Controls.Add(_logHost);
 
-            Controls.Add(_vertSplit);
-            _vertSplit.BringToFront();
-
             // 底部状态栏
             _status = new StatusStrip
             {
@@ -252,9 +309,12 @@ namespace EncryptTools
             _statusRight.Click += (_, __) => NewWorkspace("文件");
             _status.Items.Add(_statusLeft);
             _status.Items.Add(_statusRight);
+
+            SuspendLayout();
+            Controls.Add(_vertSplit);
             Controls.Add(_status);
-            _status.BringToFront();
-            _menu.BringToFront();
+            Controls.Add(_menu);
+            ResumeLayout(true);
 
             // Tab 右键菜单（关闭工作区）
             _tabContextMenu = new ContextMenuStrip();
@@ -291,7 +351,7 @@ namespace EncryptTools
         private void CreateFileWorkspace()
         {
             var index = _tabWorkspaces.TabPages.Count;
-            var tab = new TabPage($"工作区 {index}")
+            var tab = new TabPage($"文件工作区 {index}")
             {
                 BackColor = SystemColors.Control
             };
@@ -367,8 +427,8 @@ namespace EncryptTools
             var chkSelfExe = new CheckBox { Text = "加密为可运行的exe", AutoSize = true, Margin = new Padding(8, 4, 4, 2) };
             var chkOverwrite = new CheckBox { Text = "覆盖原文件", AutoSize = true, Margin = new Padding(0, 4, 4, 2), Checked = true };
             var chkRandomFileName = new CheckBox { Text = "随机文件名", AutoSize = true, Margin = new Padding(0, 4, 12, 2), Checked = false };
-            var btnEncrypt = new Button { Text = "执行加密", BackColor = Color.RoyalBlue, ForeColor = Color.White, AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
-            var btnDecrypt = new Button { Text = "执行解密", BackColor = Color.SeaGreen, ForeColor = Color.White, AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
+            var btnEncrypt = new Button { Text = "执行加密",  AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
+            var btnDecrypt = new Button { Text = "执行解密",  AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
             var btnClear = new Button { Text = "清空", AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
 
             toolbar.Controls.Add(btnSelectFile);
@@ -614,8 +674,8 @@ namespace EncryptTools
             strComboToolTip.SetToolTip(cbEncoding, cbEncoding.SelectedItem?.ToString() ?? "");
             cbMode.SelectedIndexChanged += (_, __) => strComboToolTip.SetToolTip(cbMode, cbMode.SelectedItem?.ToString() ?? "");
             cbEncoding.SelectedIndexChanged += (_, __) => strComboToolTip.SetToolTip(cbEncoding, cbEncoding.SelectedItem?.ToString() ?? "");
-            var btnEncrypt = new Button { Text = "加密", BackColor = Color.RoyalBlue, ForeColor = Color.White, AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
-            var btnDecrypt = new Button { Text = "解密", BackColor = Color.SeaGreen, ForeColor = Color.White, AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
+            var btnEncrypt = new Button { Text = "执行加密",  AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
+            var btnDecrypt = new Button { Text = "执行解密",  AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
             var btnCopyOut = new Button { Text = "复制输出", AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
 
             toolbar.Controls.Add(btnPaste);
@@ -836,6 +896,27 @@ namespace EncryptTools
                 _logHost.Controls.Clear();
                 _logHost.Controls.Add(ctx.LogBox);
             }
+        }
+
+        private void TabWorkspaces_DrawItem(object? sender, DrawItemEventArgs e)
+        {
+            var tc = (TabControl)sender!;
+            var page = tc.TabPages[e.Index];
+            var bounds = e.Bounds;
+            bool selected = (e.State & DrawItemState.Selected) != 0;
+
+            using var bgBrush = new SolidBrush(selected ? SystemColors.Window : SystemColors.Control);
+            e.Graphics.FillRectangle(bgBrush, bounds);
+
+            var sf = new StringFormat
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center,
+                Trimming = StringTrimming.EllipsisCharacter,
+                FormatFlags = StringFormatFlags.NoWrap
+            };
+            using var textBrush = new SolidBrush(SystemColors.ControlText);
+            e.Graphics.DrawString(page.Text, tc.Font, textBrush, bounds, sf);
         }
 
         private void TabWorkspaces_MouseUp(object? sender, MouseEventArgs e)
@@ -2257,6 +2338,188 @@ namespace EncryptTools
         private void OpenAbout()
         {
             MessageBox.Show(this, "encryptTools\n\n文件快速加密测试壳。", "关于", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        #region Borderless window support — drag / resize / maximize
+
+        [DllImport("user32.dll")]
+        private static extern int SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+        [DllImport("user32.dll")]
+        private static extern bool ReleaseCapture();
+
+        private const int WM_NCLBUTTONDOWN = 0x00A1;
+        private const int HTCAPTION = 2;
+        private const int RESIZE_GRIP = 6;
+
+        private void TitleBar_MouseDown(object? sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left) return;
+            if (WindowState == FormWindowState.Maximized)
+            {
+                var pct = (double)e.X / Width;
+                WindowState = FormWindowState.Normal;
+                Left = (int)(MousePosition.X - Width * pct);
+                Top = MousePosition.Y - e.Y;
+            }
+            ReleaseCapture();
+            SendMessage(Handle, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+        }
+
+        private void ToggleMaximize()
+        {
+            WindowState = WindowState == FormWindowState.Maximized
+                ? FormWindowState.Normal
+                : FormWindowState.Maximized;
+            _btnMaxRestore.Kind = WindowState == FormWindowState.Maximized
+                ? WinControlButton.ButtonKind.Restore
+                : WinControlButton.ButtonKind.Maximize;
+            _btnMaxRestore.Invalidate();
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                var cp = base.CreateParams;
+                cp.Style |= 0x00020000; // WS_MINIMIZEBOX — enable taskbar minimize
+                return cp;
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MINMAXINFO
+        {
+            public Point ptReserved;
+            public Point ptMaxSize;
+            public Point ptMaxPosition;
+            public Point ptMinTrackSize;
+            public Point ptMaxTrackSize;
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            const int WM_NCHITTEST = 0x0084;
+            const int WM_GETMINMAXINFO = 0x0024;
+
+            if (m.Msg == WM_GETMINMAXINFO)
+            {
+                base.WndProc(ref m);
+                var screen = Screen.FromHandle(Handle);
+                var info = (MINMAXINFO)Marshal.PtrToStructure(m.LParam, typeof(MINMAXINFO))!;
+                info.ptMaxPosition = new Point(
+                    screen.WorkingArea.Left - screen.Bounds.Left,
+                    screen.WorkingArea.Top - screen.Bounds.Top);
+                info.ptMaxSize = new Point(screen.WorkingArea.Width, screen.WorkingArea.Height);
+                Marshal.StructureToPtr(info, m.LParam, true);
+                return;
+            }
+
+            base.WndProc(ref m);
+
+            if (m.Msg == WM_NCHITTEST && WindowState != FormWindowState.Maximized)
+            {
+                var pt = PointToClient(new Point(
+                    (int)(m.LParam.ToInt64() & 0xFFFF),
+                    (int)((m.LParam.ToInt64() >> 16) & 0xFFFF)));
+                int w = ClientSize.Width, h = ClientSize.Height;
+                const int g = RESIZE_GRIP;
+
+                if      (pt.X <= g && pt.Y <= g)          m.Result = (IntPtr)13; // HTTOPLEFT
+                else if (pt.X >= w - g && pt.Y <= g)      m.Result = (IntPtr)14; // HTTOPRIGHT
+                else if (pt.X <= g && pt.Y >= h - g)      m.Result = (IntPtr)16; // HTBOTTOMLEFT
+                else if (pt.X >= w - g && pt.Y >= h - g)  m.Result = (IntPtr)17; // HTBOTTOMRIGHT
+                else if (pt.X <= g)                        m.Result = (IntPtr)10; // HTLEFT
+                else if (pt.X >= w - g)                    m.Result = (IntPtr)11; // HTRIGHT
+                else if (pt.Y <= g)                        m.Result = (IntPtr)12; // HTTOP
+                else if (pt.Y >= h - g)                    m.Result = (IntPtr)15; // HTBOTTOM
+            }
+        }
+
+        #endregion
+    }
+
+    /// <summary>
+    /// 自绘窗口控制按钮（最小化 / 最大化 / 还原 / 关闭），确保图标大小完全一致。
+    /// </summary>
+    internal sealed class WinControlButton : ToolStripButton
+    {
+        public enum ButtonKind { Minimize, Maximize, Restore, Close }
+
+        private ButtonKind _kind;
+        private bool _hovered;
+
+        public ButtonKind Kind
+        {
+            get => _kind;
+            set { _kind = value; Invalidate(); }
+        }
+
+        public WinControlButton(ButtonKind kind) : base(string.Empty)
+        {
+            _kind = kind;
+            DisplayStyle = ToolStripItemDisplayStyle.None;
+        }
+
+        protected override void OnMouseEnter(EventArgs e)
+        {
+            _hovered = true;
+            base.OnMouseEnter(e);
+            Invalidate();
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            _hovered = false;
+            base.OnMouseLeave(e);
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            var rect = new Rectangle(0, 0, Width, Height);
+
+            if (_hovered)
+            {
+                var bgColor = _kind == ButtonKind.Close
+                    ? Color.FromArgb(232, 17, 35)
+                    : Color.FromArgb(229, 229, 229);
+                using var bgBrush = new SolidBrush(bgColor);
+                g.FillRectangle(bgBrush, rect);
+            }
+
+            var penColor = _hovered && _kind == ButtonKind.Close
+                ? Color.White
+                : Color.FromArgb(51, 51, 51);
+            using var pen = new Pen(penColor, 1.2f);
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+            int cx = rect.Width / 2;
+            int cy = rect.Height / 2;
+            const int s = 5;
+
+            switch (_kind)
+            {
+                case ButtonKind.Minimize:
+                    g.DrawLine(pen, cx - s, cy, cx + s, cy);
+                    break;
+
+                case ButtonKind.Maximize:
+                    g.DrawRectangle(pen, cx - s, cy - s, s * 2, s * 2);
+                    break;
+
+                case ButtonKind.Restore:
+                    g.DrawRectangle(pen, cx - s + 2, cy - s, s * 2 - 2, s * 2 - 2);
+                    g.DrawLine(pen, cx - s, cy - s + 2, cx - s, cy + s);
+                    g.DrawLine(pen, cx - s, cy + s, cx + s - 2, cy + s);
+                    g.DrawLine(pen, cx - s, cy - s + 2, cx - s + 2, cy - s + 2);
+                    break;
+
+                case ButtonKind.Close:
+                    g.DrawLine(pen, cx - s, cy - s, cx + s, cy + s);
+                    g.DrawLine(pen, cx + s, cy - s, cx - s, cy + s);
+                    break;
+            }
         }
     }
 }

@@ -88,9 +88,9 @@ namespace EncryptTools.Ui
             _cbBlock.SelectedIndex = 2;
             _cbBlock.DropDown += (_, __) => SetComboDropDownWidth(_cbBlock, comboMaxW);
             SetComboDropDownWidth(_cbBlock, comboMaxW);
-            var btnEncrypt = new Button { Text = "加密(批量)", BackColor = Color.RoyalBlue, ForeColor = Color.White, AutoSize = true, Margin = new Padding(8, 0, 4, 4) };
-            var btnDecrypt = new Button { Text = "解密(批量)", BackColor = Color.SeaGreen, ForeColor = Color.White, AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
-            var btnSave = new Button { Text = "保存输出(批量)", AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
+            var btnEncrypt = new Button { Text = "执行加密",  AutoSize = true, Margin = new Padding(8, 0, 4, 4) };
+            var btnDecrypt = new Button { Text = "执行解密",  AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
+            var btnSave = new Button { Text = "保存输出", AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
 
             _cbPwdFiles = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(100, 0), MaximumSize = new Size(comboMaxW, 0), Width = 120 };
             _cbPwdFiles.DropDown += (_, __) => SetComboDropDownWidth(_cbPwdFiles, comboMaxW);
