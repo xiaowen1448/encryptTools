@@ -1,7 +1,8 @@
 加密工具ui介绍
 
 程序主页面
-<img width="1844" height="1080" alt="image" src="https://github.com/user-attachments/assets/93c11891-96dc-4247-a8e8-563095ca59f4" />
+<img width="1181" height="845" alt="image" src="https://github.com/user-attachments/assets/cdba3f0c-f7d1-40e9-bd74-a47c32778b1b" />
+
 
 
 文件加密解密：
