@@ -1,0 +1,4 @@
+/media/wx/A0F76268E87DBFEF/xiaowen_1448/encryptTools/dist/encryptTools_gcm_ubuntu/EncryptTools.GcmCli
+/media/wx/A0F76268E87DBFEF/xiaowen_1448/encryptTools/dist/encryptTools_gcm_ubuntu/EncryptTools.GcmCli.dll
+/media/wx/A0F76268E87DBFEF/xiaowen_1448/encryptTools/dist/encryptTools_gcm_ubuntu/EncryptTools.GcmCli.deps.json
+/media/wx/A0F76268E87DBFEF/xiaowen_1448/encryptTools/dist/encryptTools_gcm_ubuntu/EncryptTools.GcmCli.runtimeconfig.json

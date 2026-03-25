@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>EncryptTools</RootNamespace>
+    <AssemblyName>EncryptTools.Core</AssemblyName>
+    <Nullable>enable</Nullable>
+    <LangVersion>11</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <!-- FileEncryptor 仅在 Windows 调用 WindowsFileLockKiller；Linux/macOS 构建时抑制跨平台分析警告 -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="encryptTools" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\Crypto\CryptoAlgorithm.cs" Link="Crypto\CryptoAlgorithm.cs" />
+    <Compile Include="..\Crypto\Compat.cs" Link="Crypto\Compat.cs" />
+    <Compile Include="..\Crypto\CryptoService.cs" Link="Crypto\CryptoService.cs" />
+    <Compile Include="..\Crypto\FileEncryptor.cs" Link="Crypto\FileEncryptor.cs" />
+    <Compile Include="..\Crypto\GcmRunner.cs" Link="Crypto\GcmRunner.cs" />
+    <Compile Include="..\Crypto\WindowsFileLockKiller.cs" Link="Crypto\WindowsFileLockKiller.cs" />
+    <Compile Include="..\RuntimeHelper.cs" Link="RuntimeHelper.cs" />
+    <Compile Include="..\PasswordFileHelper.cs" Link="PasswordFileHelper.cs" />
+    <Compile Include="..\PasswordFile\PasswordFileService.cs" Link="PasswordFile\PasswordFileService.cs" />
+  </ItemGroup>
+</Project>

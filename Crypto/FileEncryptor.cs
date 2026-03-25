@@ -47,11 +47,24 @@ namespace EncryptTools
         private readonly CryptoService _crypto;
         private static readonly string[] KnownEncryptedExtensions = new[] { ".enc1", ".enc2" };
 
+        /// <summary>
+        /// 随机文件名模式下，每次生成新名；EncryptAsync 内与 UI 随后调用的 GetExpectedOutputPath 必须返回同一路径，否则列表无法更新且解密找不到文件。
+        /// </summary>
+        private readonly Dictionary<string, string> _randomEncryptOutBySourceKey = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// 解密成功后「加密文件路径 → 最终落盘路径」（含还原原始文件名后的路径）。DecryptAsync 结束后供 GetExpectedOutputPath 与 UI 刷新列表一致。
+        /// </summary>
+        private readonly Dictionary<string, string> _finalDecryptOutByEncryptedSourceKey = new(StringComparer.OrdinalIgnoreCase);
+
         public FileEncryptor(FileEncryptorOptions options)
         {
             _options = options;
             _crypto = new CryptoService();
         }
+
+        /// <summary>与内部加密/解密输出路径一致，供 UI 在完成后刷新文件列表。</summary>
+        public string GetExpectedOutputPath(string sourceFile, bool encrypt) => GetOutputFilePath(sourceFile, encrypt);
 
         public async Task EncryptAsync(IProgress<double> progress, CancellationToken ct)
         {
@@ -172,6 +185,7 @@ namespace EncryptTools
 
         public async Task DecryptAsync(IProgress<double> progress, CancellationToken ct)
         {
+            _finalDecryptOutByEncryptedSourceKey.Clear();
             var files = CollectFiles(_options.SourcePath, _options.Recursive)
                 .Where(f => CryptoService.IsWxEncryptedFile(f))
                 .ToList();
@@ -335,6 +349,12 @@ namespace EncryptTools
                     }
                 }
 
+                try
+                {
+                    _finalDecryptOutByEncryptedSourceKey[NormalizeSourceKey(file)] = Path.GetFullPath(outFile);
+                }
+                catch { /* ignore */ }
+
                 if (_options.InPlace)
                 {
                     try
@@ -386,6 +406,21 @@ namespace EncryptTools
 
         private string GetOutputFilePath(string source, bool encrypt)
         {
+            if (encrypt && _options.RandomizeFileName)
+            {
+                var key = NormalizeSourceKey(source);
+                if (_randomEncryptOutBySourceKey.TryGetValue(key, out var memo))
+                    return memo;
+            }
+
+            if (!encrypt)
+            {
+                var decKey = NormalizeSourceKey(source);
+                if (_finalDecryptOutByEncryptedSourceKey.TryGetValue(decKey, out var finalDec))
+                    return finalDec;
+            }
+
+            string result;
             if (_options.InPlace)
             {
                 if (encrypt)
@@ -398,11 +433,11 @@ namespace EncryptTools
                     var name = _options.RandomizeFileName 
                         ? GenerateRandomName(_options.RandomFileNameLength, _options.RandomFileNameFormat)
                         : Path.GetFileName(source);
-                    return Path.Combine(dir, name + ext);
+                    result = Path.Combine(dir, name + ext);
                 }
                 else
                 {
-                    return DeriveDecryptedName(source);
+                    result = DeriveDecryptedName(source);
                 }
             }
             else
@@ -419,8 +454,19 @@ namespace EncryptTools
                         ? GenerateRandomName(_options.RandomFileNameLength, _options.RandomFileNameFormat)
                         : fileName) + ext
                     : DeriveDecryptedName(fileName);
-                return Path.Combine(targetDir, outName);
+                result = Path.Combine(targetDir, outName);
             }
+
+            if (encrypt && _options.RandomizeFileName)
+                _randomEncryptOutBySourceKey[NormalizeSourceKey(source)] = result;
+
+            return result;
+        }
+
+        private static string NormalizeSourceKey(string path)
+        {
+            try { return Path.GetFullPath(path); }
+            catch { return path; }
         }
 
         private string MakeRelativeToRoot(string path)

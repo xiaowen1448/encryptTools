@@ -1,0 +1,20 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="EncryptTools.Desktop.Views.WelcomeView">
+    <StackPanel Margin="40" Spacing="16">
+        <StackPanel Orientation="Horizontal" Spacing="16">
+            <Image Source="/Assets/app2.png" Width="72" Height="72"
+                   VerticalAlignment="Top" />
+            <StackPanel Spacing="4">
+                <TextBlock Text="快速加密 / 解密" FontSize="28" FontWeight="Bold" />
+                <TextBlock Text="支持文件 · 字符串 · 图片像素化 · 常见规则智能解密"
+                           Foreground="#666" FontSize="14" TextWrapping="Wrap" />
+            </StackPanel>
+        </StackPanel>
+        <StackPanel Spacing="10" Margin="0,16,0,0">
+            <Button Name="BtnFile" Content="创建文件加密解密工作区" HorizontalAlignment="Left" MinWidth="280" />
+            <Button Name="BtnString" Content="创建字符串加密解密工作区" HorizontalAlignment="Left" MinWidth="280" />
+            <Button Name="BtnImage" Content="创建图片像素化加密 / 解密工作区" HorizontalAlignment="Left" MinWidth="280" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="EncryptTools.Desktop.Views.StringWorkspaceView">
+    <Grid RowDefinitions="Auto,*,Auto" Margin="8">
+        <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
+            <Button Name="BtnPaste" Content="从剪贴板粘贴" Margin="0,0,8,4" />
+            <Button Name="BtnClear" Content="清空" Margin="0,0,16,4" />
+            <TextBlock Text="加密模式:" VerticalAlignment="Center" Margin="0,0,4,0" />
+            <ComboBox Name="CbMode" Width="120" Margin="0,0,12,4" />
+            <TextBlock Text="编码输出:" VerticalAlignment="Center" Margin="0,0,4,0" />
+            <ComboBox Name="CbEncoding" Width="100" Margin="0,0,12,4" />
+            <Button Name="BtnEncrypt" Content="加密" Background="#4169E1" Foreground="White" Margin="0,0,6,4" MinWidth="72" />
+            <Button Name="BtnDecrypt" Content="解密" Background="#2E8B57" Foreground="White" Margin="0,0,6,4" MinWidth="72" />
+            <Button Name="BtnCopyOut" Content="复制输出" Margin="0,0,0,4" />
+        </WrapPanel>
+        <Grid Grid.Row="1" ColumnDefinitions="*,*">
+            <TextBox Name="TxtIn" Margin="0,0,8,0" AcceptsReturn="True" TextWrapping="Wrap" Watermark="输入明文或密文" />
+            <Grid Grid.Column="1" RowDefinitions="*,Auto">
+                <TextBox Name="TxtOut" Grid.Row="0" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Watermark="输出结果" />
+                <Button Name="BtnSave" Grid.Row="1" Content="保存为文件" HorizontalAlignment="Right" Margin="0,8,0,0" />
+            </Grid>
+        </Grid>
+        <TextBlock Grid.Row="2" Name="LblStrStatus" Text="就绪" Margin="0,8,0,0" />
+    </Grid>
+</UserControl>

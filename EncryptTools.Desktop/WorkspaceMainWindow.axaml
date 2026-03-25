@@ -1,0 +1,49 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="EncryptTools.Desktop.WorkspaceMainWindow"
+        Title="encryptTools - 工作区"
+        Icon="/Assets/app2.png"
+        Width="950" Height="680" MinWidth="900" MinHeight="600">
+    <DockPanel LastChildFill="True">
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_文件">
+                <MenuItem Header="_新建工作区">
+                    <MenuItem Header="文件加密 / 解密" Click="OnMenuNewFile" />
+                    <MenuItem Header="字符串加密 / 解密" Click="OnMenuNewString" />
+                    <MenuItem Header="图片像素化加密 / 解密" Click="OnMenuNewImage" />
+                </MenuItem>
+                <MenuItem Header="打开(_O)..." Click="OnMenuOpenWorkspace" />
+                <MenuItem Header="关闭所有工作区" Click="OnMenuCloseAll" />
+                <Separator />
+                <MenuItem Header="退出" Click="OnMenuExit" />
+            </MenuItem>
+            <MenuItem Header="_编辑">
+                <MenuItem Header="新建密码文件" Click="OnMenuNewPwd" />
+                <MenuItem Header="密码文件导入" Click="OnMenuImportPwd" />
+                <MenuItem Header="密码文件编辑" Click="OnMenuEditPwd" />
+            </MenuItem>
+            <MenuItem Header="_帮助">
+                <MenuItem Header="使用手册" Click="OnMenuHelp" />
+                <Separator />
+                <MenuItem Header="关于" Click="OnMenuAbout" />
+            </MenuItem>
+        </Menu>
+        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Height="26" Margin="8,4">
+            <TextBlock Name="StatusLeft" VerticalAlignment="Center" />
+            <TextBlock Name="StatusRight" Grid.Column="1" VerticalAlignment="Center"
+                       Text="新建工作区" TextDecorations="Underline" Cursor="Hand"
+                       Opacity="0.85" PointerPressed="OnStatusRightPointerPressed" />
+        </Grid>
+        <Grid RowDefinitions="*,5,200">
+            <TabControl Name="Tabs" Grid.Row="0"
+                        VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                        SelectionChanged="Tabs_OnSelectionChanged" />
+            <GridSplitter Grid.Row="1" Height="5" ResizeDirection="Rows" />
+            <Border Grid.Row="2" MinHeight="100">
+                <ScrollViewer Name="LogScrollHost">
+                    <TextBlock Name="LogPlaceholder" TextWrapping="Wrap" Text="选择工作区后，日志将显示在此区域。" Margin="8" />
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="EncryptTools.Desktop.Views.ImageWorkspaceView"
+             VerticalAlignment="Stretch" HorizontalAlignment="Stretch">
+    <Grid RowDefinitions="Auto,*,Auto" Margin="4" VerticalAlignment="Stretch" MinHeight="240">
+        <!-- 与 Windows 版 ImageWorkspacePanel 工具栏风格接近：浅灰底 + 多行换行 -->
+        <Border Background="#F0F0F0" BorderBrush="#D0D0D0" BorderThickness="1" CornerRadius="2" Padding="8,6">
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" MaxHeight="220">
+                <StackPanel Spacing="6">
+                    <WrapPanel Orientation="Horizontal">
+                        <Button Name="BtnSelect" Content="选择图片" Margin="0,0,8,4" MinHeight="28" />
+                        <Button Name="BtnPastePaths" Content="粘贴路径" Margin="0,0,8,4" MinHeight="28"
+                                ToolTip.Tip="从剪贴板添加图片路径。若拖入无效（常见于 Wayland），请在文件管理器中复制后点此处。" />
+                        <TextBlock Text="支持拖拽 / 粘贴路径" VerticalAlignment="Center" Foreground="#666" Margin="0,0,16,4" />
+                        <CheckBox Name="ChkPixelation" Content="像素化" Margin="0,0,8,4" VerticalAlignment="Center" />
+                        <TextBlock Text="加密模式:" VerticalAlignment="Center" Margin="0,0,4,4" />
+                        <ComboBox Name="CbMode" Width="120" Margin="0,0,12,4" />
+                        <TextBlock Text="密码文件:" VerticalAlignment="Center" Margin="0,0,4,4" />
+                        <ComboBox Name="CbPwdFile" Width="120" Margin="0,0,8,4" />
+                        <TextBlock Text="块:" VerticalAlignment="Center" Margin="0,0,4,4" />
+                        <ComboBox Name="CbBlock" Width="72" Margin="0,0,12,4" />
+                        <Button Name="BtnEncrypt" Content="加密(批量)" Background="#4169E1" Foreground="White" Margin="0,0,6,4" MinWidth="96" />
+                        <Button Name="BtnDecrypt" Content="解密(批量)" Background="#2E8B57" Foreground="White" Margin="0,0,6,4" MinWidth="96" />
+                        <Button Name="BtnSave" Content="保存输出(批量)" Margin="0,0,8,4" MinWidth="112" />
+                    </WrapPanel>
+                    <WrapPanel Orientation="Horizontal">
+                        <CheckBox Name="ChkIconOverlay" Content="图标覆盖" IsChecked="True" Margin="0,0,8,4" VerticalAlignment="Center" />
+                        <Button Name="BtnImportIcons" Content="导入图标" Margin="0,0,8,4" MinWidth="88" />
+                        <TextBlock Text="图标:" VerticalAlignment="Center" Margin="0,0,4,4" />
+                        <ComboBox Name="CbIcons" Width="120" Margin="0,0,6,4" />
+                        <Image Name="IconPreview" Width="32" Height="32" Margin="0,0,8,4" Stretch="Uniform" />
+                        <TextBlock Text="透明度%:" VerticalAlignment="Center" Margin="0,0,4,4" />
+                        <Slider Name="SliderOpacity" Width="100" Minimum="1" Maximum="100" Value="80" Margin="0,0,12,4" VerticalAlignment="Center" />
+                        <TextBlock Text="图标块:" VerticalAlignment="Center" Margin="0,0,4,4" />
+                        <ComboBox Name="CbIconBlock" Width="72" Margin="0,0,12,4" />
+                        <Button Name="BtnClearImages" Content="清空图片" Margin="0,0,0,4" />
+                    </WrapPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <Grid Name="DropHost" Grid.Row="1" Margin="0,8,0,4" MinHeight="260">
+            <TextBlock Name="Placeholder"
+                       Text="选择图片或拖拽到此处"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="#888888" FontSize="16" TextAlignment="Center" />
+            <TabControl Name="SheetTabs" IsVisible="False" SelectionChanged="SheetTabs_OnSelectionChanged" />
+        </Grid>
+
+        <TextBlock Grid.Row="2" Name="LblImageStatus" Text="就绪" Margin="0,4,0,0" />
+    </Grid>
+</UserControl>
