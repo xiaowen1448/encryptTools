@@ -19,7 +19,7 @@ namespace EncryptTools.Ui
     public sealed class ImageWorkspacePanel : UserControl
     {
         private const int IconThumbSize = 16;
-        private const int IconRowHeight = 16;
+        private const int IconRowHeight = 20;
         // 下拉时默认展示的行数（>=10），其余由列表滚动
         private const int IconVisibleItems = 12;
         private const int IconDropdownMaxWidth = 220;
@@ -35,6 +35,7 @@ namespace EncryptTools.Ui
         private string? _passwordFilePath;
         private CheckBox _chkPixelation = null!;
         private CheckBox _chkIconOverlay = null!;
+        private CheckBox _chkIconRandomize = null!;
         private ComboBox _cbIcons = null!;
         private ComboBox _cbIconBlock = null!;
         private NumericUpDown _numOverlayOpacity = null!;
@@ -157,6 +158,7 @@ namespace EncryptTools.Ui
             _cbIconBlock.SelectedIndex = 3; // 32×32
             _cbIconBlock.DropDown += (_, __) => SetComboDropDownWidth(_cbIconBlock, comboMaxW);
             SetComboDropDownWidth(_cbIconBlock, comboMaxW);
+            _chkIconRandomize = new CheckBox { Text = "图标无序化", AutoSize = true, Margin = new Padding(4, 6, 8, 0), Checked = true };
 
             toolbar.Controls.Add(btnSelect);
             toolbar.Controls.Add(lblHint);
@@ -183,16 +185,16 @@ namespace EncryptTools.Ui
             };
             // 图标覆盖选择框后：导入图标按钮 -> 图标下拉 -> 图标预览
             iconRow.Controls.Add(btnImportIcons);
-            // 图标下拉框尺寸与按钮一致（保持高度/宽度一致），避免 OwnerDraw 后控件高度变大
             _cbIcons.Width = btnImportIcons.Width;
-            _cbIcons.Height = btnImportIcons.Height;
             _cbIcons.DropDownWidth = _cbIcons.Width;
+            btnImportIcons.Height = _cbIcons.Height;
             iconRow.Controls.Add(_cbIcons);
             toolbar.Controls.Add(iconRow);
             toolbar.Controls.Add(new Label { Text = "透明度%:", AutoSize = true, Margin = new Padding(4, 8, 2, 0) });
             toolbar.Controls.Add(_numOverlayOpacity);
             toolbar.Controls.Add(new Label { Text = "图标块:", AutoSize = true, Margin = new Padding(4, 8, 2, 0) });
             toolbar.Controls.Add(_cbIconBlock);
+            toolbar.Controls.Add(_chkIconRandomize);
             toolbar.Controls.Add(btnEncrypt);
             toolbar.Controls.Add(btnDecrypt);
             toolbar.Controls.Add(btnSave);
@@ -749,6 +751,8 @@ namespace EncryptTools.Ui
             public string? IconOverlayBlocksEncryptedBase64 { get; set; }
             /// <summary>遮挡使用的块尺寸，与 IconOverlayBlocksEncryptedBase64 配套。</summary>
             public int IconOverlayBlockSize { get; set; }
+            /// <summary>是否启用图标无序化（随机旋转、随机偏移、杂乱覆盖）。</summary>
+            public bool IconRandomize { get; set; }
         }
 
         private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".jfif", ".jpe", ".bmp", ".gif" };
@@ -969,6 +973,7 @@ namespace EncryptTools.Ui
             _cbBlock.Enabled = _chkPixelation.Checked;
             bool needsPassword = mode is ImageMode.Permutation or ImageMode.XorStream or ImageMode.BlockShuffle or ImageMode.ArnoldCat;
             _cbPwdFiles.Enabled = true;
+            _chkIconRandomize.Enabled = _chkIconOverlay.Checked;
             btnDecrypt.Enabled = _chkIconOverlay.Checked || (_chkPixelation.Checked && mode != ImageMode.Mosaic);
         }
 
@@ -1066,7 +1071,8 @@ namespace EncryptTools.Ui
                 PixelationEnabled = _chkPixelation.Checked,
                 IconOverlayEnabled = _chkIconOverlay.Checked,
                 OverlayOpacityPercent = (int)_numOverlayOpacity.Value,
-                IconOverlayBlockSizeHint = ParseBlockSize(_cbIconBlock?.SelectedItem?.ToString()) ?? 32
+                IconOverlayBlockSizeHint = ParseBlockSize(_cbIconBlock?.SelectedItem?.ToString()) ?? 32,
+                IconRandomize = _chkIconRandomize?.Checked ?? false
             };
             // 记录当前所选密码文件名（仅文件名），用于解密时校验是否选对密码文件。旧元数据无此字段则不强制。
             try
@@ -1159,17 +1165,49 @@ namespace EncryptTools.Ui
             var cm = new ColorMatrix { Matrix00 = 1f, Matrix11 = 1f, Matrix22 = 1f, Matrix33 = alpha, Matrix44 = 1f };
             ia.SetColorMatrix(cm, ColorMatrixFlag.Default, ColorAdjustType.Bitmap);
             var rnd = new Random(unchecked(Environment.TickCount * 397) ^ w ^ (h << 16));
+            bool randomize = options.IconRandomize;
             using (var g = Graphics.FromImage(target))
             {
-                for (int idx = 0; idx < totalBlocks; idx++)
+                if (randomize)
                 {
-                    int xb = idx % bx, yb = idx / bx;
-                    int x0 = xb * block, y0 = yb * block;
-                    int bw = Math.Min(block, w - x0), bh = Math.Min(block, h - y0);
-                    if (bw <= 0 || bh <= 0) continue;
-                    var icon = icons[rnd.Next(icons.Count)];
-                    // 每块整块用图标填满，实现全覆盖、无未遮挡区域
-                    g.DrawImage(icon, new Rectangle(x0, y0, bw, bh), 0, 0, icon.Width, icon.Height, GraphicsUnit.Pixel, ia);
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                    for (int idx = 0; idx < totalBlocks; idx++)
+                    {
+                        int xb = idx % bx, yb = idx / bx;
+                        int x0 = xb * block, y0 = yb * block;
+                        int bw = Math.Min(block, w - x0), bh = Math.Min(block, h - y0);
+                        if (bw <= 0 || bh <= 0) continue;
+                        var icon = icons[rnd.Next(icons.Count)];
+
+                        float angle = (float)(rnd.NextDouble() * 360);
+                        float offX = (float)(rnd.NextDouble() - 0.5) * block * 0.6f;
+                        float offY = (float)(rnd.NextDouble() - 0.5) * block * 0.6f;
+                        float scale = 0.8f + (float)(rnd.NextDouble() * 0.6);
+
+                        var gs = g.Save();
+                        float cx = x0 + bw / 2f + offX;
+                        float cy = y0 + bh / 2f + offY;
+                        g.TranslateTransform(cx, cy);
+                        g.RotateTransform(angle);
+                        int dw = Math.Max(1, (int)(bw * scale));
+                        int dh = Math.Max(1, (int)(bh * scale));
+                        g.DrawImage(icon, new Rectangle(-dw / 2, -dh / 2, dw, dh),
+                                    0, 0, icon.Width, icon.Height, GraphicsUnit.Pixel, ia);
+                        g.Restore(gs);
+                    }
+                }
+                else
+                {
+                    for (int idx = 0; idx < totalBlocks; idx++)
+                    {
+                        int xb = idx % bx, yb = idx / bx;
+                        int x0 = xb * block, y0 = yb * block;
+                        int bw = Math.Min(block, w - x0), bh = Math.Min(block, h - y0);
+                        if (bw <= 0 || bh <= 0) continue;
+                        var icon = icons[rnd.Next(icons.Count)];
+                        g.DrawImage(icon, new Rectangle(x0, y0, bw, bh), 0, 0, icon.Width, icon.Height, GraphicsUnit.Pixel, ia);
+                    }
                 }
             }
             if (work != null)

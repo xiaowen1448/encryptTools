@@ -24,4 +24,6 @@ public sealed class ImageEffectOptions
     public int IconOverlayBlockSizeHint { get; set; } = 32;
     public string? IconOverlayBlocksEncryptedBase64 { get; set; }
     public int IconOverlayBlockSize { get; set; }
+    /// <summary>是否启用图标无序化（随机旋转、随机偏移、杂乱覆盖）。</summary>
+    public bool IconRandomize { get; set; }
 }

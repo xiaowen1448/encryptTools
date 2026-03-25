@@ -89,6 +89,7 @@ public partial class ImageWorkspaceView : UserControl
         UpdateToolbarIconPreview();
 
         ChkPixelation.IsCheckedChanged += (_, _) => UpdateModeEnabled();
+        ChkIconOverlay.IsCheckedChanged += (_, _) => UpdateModeEnabled();
         UpdateModeEnabled();
 
         BtnSelect.Click += async (_, _) => await SelectImagesAsync();
@@ -276,6 +277,7 @@ public partial class ImageWorkspaceView : UserControl
     private void UpdateModeEnabled()
     {
         CbMode.IsEnabled = ChkPixelation.IsChecked == true;
+        ChkIconRandomize.IsEnabled = ChkIconOverlay.IsChecked == true;
     }
 
     private void UpdateStatus()
@@ -346,7 +348,8 @@ public partial class ImageWorkspaceView : UserControl
             PixelationEnabled = ChkPixelation.IsChecked == true,
             IconOverlayEnabled = ChkIconOverlay.IsChecked == true,
             OverlayOpacityPercent = (int)SliderOpacity.Value,
-            IconOverlayBlockSizeHint = ParseIconBlockPx()
+            IconOverlayBlockSizeHint = ParseIconBlockPx(),
+            IconRandomize = ChkIconRandomize.IsChecked == true
         };
         try
         {

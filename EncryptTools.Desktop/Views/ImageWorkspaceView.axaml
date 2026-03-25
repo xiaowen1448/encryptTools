@@ -32,7 +32,8 @@
                         <TextBlock Text="透明度%:" VerticalAlignment="Center" Margin="0,0,4,4" />
                         <Slider Name="SliderOpacity" Width="100" Minimum="1" Maximum="100" Value="80" Margin="0,0,12,4" VerticalAlignment="Center" />
                         <TextBlock Text="图标块:" VerticalAlignment="Center" Margin="0,0,4,4" />
-                        <ComboBox Name="CbIconBlock" Width="72" Margin="0,0,12,4" />
+                        <ComboBox Name="CbIconBlock" Width="72" Margin="0,0,8,4" />
+                        <CheckBox Name="ChkIconRandomize" Content="图标无序化" Margin="0,0,8,4" VerticalAlignment="Center" />
                         <Button Name="BtnClearImages" Content="清空图片" Margin="0,0,0,4" />
                     </WrapPanel>
                 </StackPanel>

@@ -28,3 +28,5 @@ Desktop.ini
 
 # Misc
 *.log
+/EncryptTools.GcmCli/bin
+/EncryptTools.GcmCli/obj

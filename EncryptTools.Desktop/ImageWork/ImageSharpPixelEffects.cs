@@ -7,6 +7,7 @@ using EncryptTools;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Processing.Processors.Transforms;
 
 namespace EncryptTools.Desktop.ImageWork;
 
@@ -345,6 +346,7 @@ public static class ImageSharpPixelEffects
 
         float alpha = Math.Max(0.01f, Math.Min(1f, options.OverlayOpacityPercent / 100f));
         var rnd = new Random(unchecked(Environment.TickCount * 397) ^ w ^ (h << 16));
+        bool randomize = options.IconRandomize;
 
         for (int idx = 0; idx < totalBlocks; idx++)
         {
@@ -353,19 +355,58 @@ public static class ImageSharpPixelEffects
             int bw = Math.Min(block, w - x0), bh = Math.Min(block, h - y0);
             if (bw <= 0 || bh <= 0) continue;
             var icon = icons[rnd.Next(icons.Count)];
-            using var scaled = icon.Clone(ctx => ctx.Resize(bw, bh));
-            for (int dy = 0; dy < bh; dy++)
-            for (int dx = 0; dx < bw; dx++)
+
+            if (randomize)
             {
-                var p = scaled[dx, dy];
-                var t = target[x0 + dx, y0 + dy];
-                float sa = (p.A / 255f) * alpha;
-                float inv = 1f - sa;
-                target[x0 + dx, y0 + dy] = new Rgba32(
-                    (byte)Math.Clamp(t.R * inv + p.R * sa, 0, 255),
-                    (byte)Math.Clamp(t.G * inv + p.G * sa, 0, 255),
-                    (byte)Math.Clamp(t.B * inv + p.B * sa, 0, 255),
-                    (byte)Math.Clamp(t.A * inv + p.A * sa, 0, 255));
+                float angle = (float)(rnd.NextDouble() * 360);
+                float offX = (float)(rnd.NextDouble() - 0.5) * block * 0.6f;
+                float offY = (float)(rnd.NextDouble() - 0.5) * block * 0.6f;
+                float scale = 0.8f + (float)(rnd.NextDouble() * 0.6);
+                int dw = Math.Max(1, (int)(bw * scale));
+                int dh = Math.Max(1, (int)(bh * scale));
+
+                using var transformed = icon.Clone(ctx =>
+                {
+                    ctx.Resize(dw, dh);
+                    ctx.Rotate(angle);
+                });
+                int tw = transformed.Width, th = transformed.Height;
+                int cx = x0 + bw / 2 + (int)offX;
+                int cy = y0 + bh / 2 + (int)offY;
+                int sx = cx - tw / 2, sy = cy - th / 2;
+                for (int dy = 0; dy < th; dy++)
+                for (int dx = 0; dx < tw; dx++)
+                {
+                    int px = sx + dx, py = sy + dy;
+                    if (px < 0 || px >= w || py < 0 || py >= h) continue;
+                    var p = transformed[dx, dy];
+                    if (p.A == 0) continue;
+                    var t = target[px, py];
+                    float sa = (p.A / 255f) * alpha;
+                    float inv2 = 1f - sa;
+                    target[px, py] = new Rgba32(
+                        (byte)Math.Clamp(t.R * inv2 + p.R * sa, 0, 255),
+                        (byte)Math.Clamp(t.G * inv2 + p.G * sa, 0, 255),
+                        (byte)Math.Clamp(t.B * inv2 + p.B * sa, 0, 255),
+                        (byte)Math.Clamp(t.A * inv2 + p.A * sa, 0, 255));
+                }
+            }
+            else
+            {
+                using var scaled = icon.Clone(ctx => ctx.Resize(bw, bh));
+                for (int dy = 0; dy < bh; dy++)
+                for (int dx = 0; dx < bw; dx++)
+                {
+                    var p = scaled[dx, dy];
+                    var t = target[x0 + dx, y0 + dy];
+                    float sa = (p.A / 255f) * alpha;
+                    float inv2 = 1f - sa;
+                    target[x0 + dx, y0 + dy] = new Rgba32(
+                        (byte)Math.Clamp(t.R * inv2 + p.R * sa, 0, 255),
+                        (byte)Math.Clamp(t.G * inv2 + p.G * sa, 0, 255),
+                        (byte)Math.Clamp(t.B * inv2 + p.B * sa, 0, 255),
+                        (byte)Math.Clamp(t.A * inv2 + p.A * sa, 0, 255));
+                }
             }
         }
 
