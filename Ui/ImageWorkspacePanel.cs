@@ -83,7 +83,7 @@ namespace EncryptTools.Ui
             _cbMode.SelectedIndex = 1;
             _cbMode.DropDown += (_, __) => SetComboDropDownWidth(_cbMode, comboMaxW);
             SetComboDropDownWidth(_cbMode, comboMaxW);
-            _chkPixelation = new CheckBox { Text = "像素化", AutoSize = true, Margin = new Padding(4, 6, 8, 0), Checked = false };
+            _chkPixelation = new CheckBox { Text = "像素化", AutoSize = true, Margin = new Padding(4, 6, 8, 0), Checked = true };
             _cbBlock = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(56, 0), MaximumSize = new Size(comboMaxW, 0), Width = 72 };
             _cbBlock.Items.AddRange(new object[] { "4×4", "8×8", "16×16", "24×24", "32×32", "48×48", "64×64" });
             _cbBlock.SelectedIndex = 2;
@@ -753,6 +753,8 @@ namespace EncryptTools.Ui
             public int IconOverlayBlockSize { get; set; }
             /// <summary>是否启用图标无序化（随机旋转、随机偏移、杂乱覆盖）。</summary>
             public bool IconRandomize { get; set; }
+            /// <summary>像素 XOR：1=旧版（整缓冲含 Alpha/行填充），2=仅 BGR（推荐，避免解密后磨砂感）。</summary>
+            public int PixelXorVersion { get; set; } = 2;
         }
 
         private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".jfif", ".jpe", ".bmp", ".gif" };
@@ -1072,7 +1074,8 @@ namespace EncryptTools.Ui
                 IconOverlayEnabled = _chkIconOverlay.Checked,
                 OverlayOpacityPercent = (int)_numOverlayOpacity.Value,
                 IconOverlayBlockSizeHint = ParseBlockSize(_cbIconBlock?.SelectedItem?.ToString()) ?? 32,
-                IconRandomize = _chkIconRandomize?.Checked ?? false
+                IconRandomize = _chkIconRandomize?.Checked ?? false,
+                PixelXorVersion = 2
             };
             // 记录当前所选密码文件名（仅文件名），用于解密时校验是否选对密码文件。旧元数据无此字段则不强制。
             try
@@ -1437,10 +1440,11 @@ namespace EncryptTools.Ui
         {
             if (string.IsNullOrEmpty(password)) throw new InvalidOperationException("missing password");
             var key = DeriveKey(password, options, 32);
-            return XorPixels(bmp, key);
+            int ver = options.PixelXorVersion >= 2 ? 2 : 1;
+            return XorPixels(bmp, key, ver);
         }
 
-        private static Bitmap XorPixels(Bitmap bmp, byte[] key)
+        private static Bitmap XorPixels(Bitmap bmp, byte[] key, int pixelXorVersion)
         {
             var rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
             var data = bmp.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
@@ -1454,24 +1458,58 @@ namespace EncryptTools.Ui
                 using var hmac = new HMACSHA256(key);
 #if NET46 || NET48
                 var counter = new byte[8];
+#else
+                Span<byte> counterSpan = stackalloc byte[8];
 #endif
                 ulong ctr = 0;
                 int offset = 0;
-                while (offset < len)
+                int w = bmp.Width, h = bmp.Height;
+
+                if (pixelXorVersion >= 2)
                 {
+                    byte[] macBlock = Array.Empty<byte>();
+                    int macPos = 0;
+                    for (int y = 0; y < h; y++)
+                    {
+                        int rowStart = y * stride;
+                        for (int x = 0; x < w; x++)
+                        {
+                            for (int c = 0; c < 3; c++)
+                            {
+                                if (macPos >= macBlock.Length)
+                                {
 #if NET46 || NET48
-                    var ctrBytes = BitConverter.GetBytes(ctr++);
-                    for (int i = 0; i < 8; i++) counter[i] = ctrBytes[i];
-                    var mac = hmac.ComputeHash(counter);
+                                    var ctrBytes = BitConverter.GetBytes(ctr++);
+                                    for (int i = 0; i < 8; i++) counter[i] = ctrBytes[i];
+                                    macBlock = hmac.ComputeHash(counter);
 #else
-                    Span<byte> counterSpan = stackalloc byte[8];
-                    BitConverter.TryWriteBytes(counterSpan, ctr++);
-                    var mac = hmac.ComputeHash(counterSpan.ToArray());
+                                    BitConverter.TryWriteBytes(counterSpan, ctr++);
+                                    macBlock = hmac.ComputeHash(counterSpan.ToArray());
 #endif
-                    int take = Math.Min(mac.Length, len - offset);
-                    for (int i = 0; i < take; i++)
-                        buf[offset + i] ^= mac[i];
-                    offset += take;
+                                    macPos = 0;
+                                }
+                                buf[rowStart + x * 4 + c] ^= macBlock[macPos++];
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    while (offset < len)
+                    {
+#if NET46 || NET48
+                        var ctrBytes = BitConverter.GetBytes(ctr++);
+                        for (int i = 0; i < 8; i++) counter[i] = ctrBytes[i];
+                        var mac = hmac.ComputeHash(counter);
+#else
+                        BitConverter.TryWriteBytes(counterSpan, ctr++);
+                        var mac = hmac.ComputeHash(counterSpan.ToArray());
+#endif
+                        int take = Math.Min(mac.Length, len - offset);
+                        for (int i = 0; i < take; i++)
+                            buf[offset + i] ^= mac[i];
+                        offset += take;
+                    }
                 }
 
                 System.Runtime.InteropServices.Marshal.Copy(buf, 0, data.Scan0, len);
@@ -1497,13 +1535,37 @@ namespace EncryptTools.Ui
             int bx = (w + block - 1) / block;
             int by = (h + block - 1) / block;
             int n = bx * by;
+            // 仅在同尺寸块之间置换；边缘与内部块尺寸不同时不能混排，否则复制宽高不一致会错位。
             var perm = new int[n];
             for (int i = 0; i < n; i++) perm[i] = i;
-            var rng = new Random(seed);
-            for (int i = n - 1; i > 0; i--)
+            var groups = new Dictionary<(int bw, int bh), List<int>>();
+            for (int bi = 0; bi < n; bi++)
             {
-                int j = rng.Next(i + 1);
-                (perm[i], perm[j]) = (perm[j], perm[i]);
+                int xb = bi % bx, yb = bi / bx;
+                int x0 = xb * block, y0 = yb * block;
+                var key = (Math.Min(block, w - x0), Math.Min(block, h - y0));
+                if (!groups.TryGetValue(key, out var list))
+                {
+                    list = new List<int>();
+                    groups[key] = list;
+                }
+                list.Add(bi);
+            }
+            foreach (var kv in groups)
+            {
+                var idxs = kv.Value.ToArray();
+                int m = idxs.Length;
+                if (m <= 1) continue;
+                int subSeed = seed ^ (kv.Key.bw * 73856093 ^ kv.Key.bh * 19349663);
+                var rng = new Random(subSeed);
+                var shuffled = (int[])idxs.Clone();
+                for (int i = m - 1; i > 0; i--)
+                {
+                    int j = rng.Next(i + 1);
+                    (shuffled[i], shuffled[j]) = (shuffled[j], shuffled[i]);
+                }
+                for (int i = 0; i < m; i++)
+                    perm[idxs[i]] = shuffled[i];
             }
             int[] map;
             if (encrypt) map = perm;
