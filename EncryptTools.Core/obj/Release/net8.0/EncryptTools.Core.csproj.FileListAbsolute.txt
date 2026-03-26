@@ -1,9 +1,0 @@
-/media/wx/A0F76268E87DBFEF/xiaowen_1448/encryptTools/EncryptTools.Core/bin/Release/net8.0/EncryptTools.Core.deps.json
-/media/wx/A0F76268E87DBFEF/xiaowen_1448/encryptTools/EncryptTools.Core/bin/Release/net8.0/EncryptTools.Core.dll
-/media/wx/A0F76268E87DBFEF/xiaowen_1448/encryptTools/EncryptTools.Core/obj/Release/net8.0/EncryptTools.Core.GeneratedMSBuildEditorConfig.editorconfig
-/media/wx/A0F76268E87DBFEF/xiaowen_1448/encryptTools/EncryptTools.Core/obj/Release/net8.0/EncryptTools.Core.AssemblyInfoInputs.cache
-/media/wx/A0F76268E87DBFEF/xiaowen_1448/encryptTools/EncryptTools.Core/obj/Release/net8.0/EncryptTools.Core.AssemblyInfo.cs
-/media/wx/A0F76268E87DBFEF/xiaowen_1448/encryptTools/EncryptTools.Core/obj/Release/net8.0/EncryptTools.Core.csproj.CoreCompileInputs.cache
-/media/wx/A0F76268E87DBFEF/xiaowen_1448/encryptTools/EncryptTools.Core/obj/Release/net8.0/EncryptTools.Core.dll
-/media/wx/A0F76268E87DBFEF/xiaowen_1448/encryptTools/EncryptTools.Core/obj/Release/net8.0/refint/EncryptTools.Core.dll
-/media/wx/A0F76268E87DBFEF/xiaowen_1448/encryptTools/EncryptTools.Core/obj/Release/net8.0/ref/EncryptTools.Core.dll

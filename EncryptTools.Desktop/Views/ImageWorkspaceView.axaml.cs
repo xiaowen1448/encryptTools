@@ -349,7 +349,8 @@ public partial class ImageWorkspaceView : UserControl
             IconOverlayEnabled = ChkIconOverlay.IsChecked == true,
             OverlayOpacityPercent = (int)SliderOpacity.Value,
             IconOverlayBlockSizeHint = ParseIconBlockPx(),
-            IconRandomize = ChkIconRandomize.IsChecked == true
+            IconRandomize = ChkIconRandomize.IsChecked == true,
+            PixelXorVersion = 2
         };
         try
         {

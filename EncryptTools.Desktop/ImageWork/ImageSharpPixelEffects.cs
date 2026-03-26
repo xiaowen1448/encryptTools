@@ -134,10 +134,11 @@ public static class ImageSharpPixelEffects
     {
         if (string.IsNullOrEmpty(password)) throw new InvalidOperationException("missing password");
         var key = DeriveKey(password, options, 32);
-        return XorPixels(bmp, key);
+        int ver = options.PixelXorVersion >= 2 ? 2 : 1;
+        return XorPixels(bmp, key, ver);
     }
 
-    private static Image<Rgba32> XorPixels(Image<Rgba32> bmp, byte[] key)
+    private static Image<Rgba32> XorPixels(Image<Rgba32> bmp, byte[] key, int pixelXorVersion)
     {
         int w = bmp.Width, h = bmp.Height;
         int stride = BitmapStride(w);
@@ -147,16 +148,42 @@ public static class ImageSharpPixelEffects
 
         using var hmac = new HMACSHA256(key);
         ulong ctr = 0;
-        int offset = 0;
         Span<byte> counterSpan = stackalloc byte[8];
-        while (offset < len)
+
+        if (pixelXorVersion >= 2)
         {
-            BitConverter.TryWriteBytes(counterSpan, ctr++);
-            var mac = hmac.ComputeHash(counterSpan.ToArray());
-            int take = Math.Min(mac.Length, len - offset);
-            for (int i = 0; i < take; i++)
-                buf[offset + i] ^= mac[i];
-            offset += take;
+            byte[] macBlock = Array.Empty<byte>();
+            int macPos = 0;
+            for (int y = 0; y < h; y++)
+            {
+                int rowStart = y * stride;
+                for (int x = 0; x < w; x++)
+                {
+                    for (int c = 0; c < 3; c++)
+                    {
+                        if (macPos >= macBlock.Length)
+                        {
+                            BitConverter.TryWriteBytes(counterSpan, ctr++);
+                            macBlock = hmac.ComputeHash(counterSpan.ToArray());
+                            macPos = 0;
+                        }
+                        buf[rowStart + x * 4 + c] ^= macBlock[macPos++];
+                    }
+                }
+            }
+        }
+        else
+        {
+            int offset = 0;
+            while (offset < len)
+            {
+                BitConverter.TryWriteBytes(counterSpan, ctr++);
+                var mac = hmac.ComputeHash(counterSpan.ToArray());
+                int take = Math.Min(mac.Length, len - offset);
+                for (int i = 0; i < take; i++)
+                    buf[offset + i] ^= mac[i];
+                offset += take;
+            }
         }
 
         CopyBgraBufferToImage(buf, stride, bmp);
@@ -179,11 +206,34 @@ public static class ImageSharpPixelEffects
         int n = bx * by;
         var perm = new int[n];
         for (int i = 0; i < n; i++) perm[i] = i;
-        var rng = new Random(seed);
-        for (int i = n - 1; i > 0; i--)
+        var groups = new Dictionary<(int bw, int bh), List<int>>();
+        for (int bi = 0; bi < n; bi++)
         {
-            int j = rng.Next(i + 1);
-            (perm[i], perm[j]) = (perm[j], perm[i]);
+            int xb = bi % bx, yb = bi / bx;
+            int x0 = xb * block, y0 = yb * block;
+            var key = (Math.Min(block, w - x0), Math.Min(block, h - y0));
+            if (!groups.TryGetValue(key, out var list))
+            {
+                list = new List<int>();
+                groups[key] = list;
+            }
+            list.Add(bi);
+        }
+        foreach (var kv in groups)
+        {
+            var idxs = kv.Value.ToArray();
+            int m = idxs.Length;
+            if (m <= 1) continue;
+            int subSeed = seed ^ (kv.Key.bw * 73856093 ^ kv.Key.bh * 19349663);
+            var rng = new Random(subSeed);
+            var shuffled = (int[])idxs.Clone();
+            for (int i = m - 1; i > 0; i--)
+            {
+                int j = rng.Next(i + 1);
+                (shuffled[i], shuffled[j]) = (shuffled[j], shuffled[i]);
+            }
+            for (int i = 0; i < m; i++)
+                perm[idxs[i]] = shuffled[i];
         }
 
         int[] map;

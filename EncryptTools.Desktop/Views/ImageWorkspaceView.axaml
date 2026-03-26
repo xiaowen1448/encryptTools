@@ -12,7 +12,7 @@
                         <Button Name="BtnPastePaths" Content="粘贴路径" Margin="0,0,8,4" MinHeight="28"
                                 ToolTip.Tip="从剪贴板添加图片路径。若拖入无效（常见于 Wayland），请在文件管理器中复制后点此处。" />
                         <TextBlock Text="支持拖拽 / 粘贴路径" VerticalAlignment="Center" Foreground="#666" Margin="0,0,16,4" />
-                        <CheckBox Name="ChkPixelation" Content="像素化" Margin="0,0,8,4" VerticalAlignment="Center" />
+                        <CheckBox Name="ChkPixelation" Content="像素化" IsChecked="True" Margin="0,0,8,4" VerticalAlignment="Center" />
                         <TextBlock Text="加密模式:" VerticalAlignment="Center" Margin="0,0,4,4" />
                         <ComboBox Name="CbMode" Width="120" Margin="0,0,12,4" />
                         <TextBlock Text="密码文件:" VerticalAlignment="Center" Margin="0,0,4,4" />

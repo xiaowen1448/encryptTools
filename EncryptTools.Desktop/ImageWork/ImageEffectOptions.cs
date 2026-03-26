@@ -26,4 +26,6 @@ public sealed class ImageEffectOptions
     public int IconOverlayBlockSize { get; set; }
     /// <summary>是否启用图标无序化（随机旋转、随机偏移、杂乱覆盖）。</summary>
     public bool IconRandomize { get; set; }
+    /// <summary>像素 XOR：0/1=旧版（整缓冲含 Alpha），2=仅 BGR（推荐）。</summary>
+    public int PixelXorVersion { get; set; } = 2;
 }
