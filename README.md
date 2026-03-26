@@ -21,7 +21,30 @@
 <img width="1575" height="800" alt="image" src="https://github.com/user-attachments/assets/d099a426-5877-4383-96e6-c24d7835cbc5" />
 
 
-图片覆盖式加密解密：
+图片像素化加密解密
+
+马赛克效果
+
+<img width="1834" height="1009" alt="image" src="https://github.com/user-attachments/assets/a9a661cc-8424-4272-8d25-81b80fa6e12d" />
+
+
+密钥置乱
+
+
+<img width="1834" height="1009" alt="image" src="https://github.com/user-attachments/assets/4d17ea12-ca75-4ffa-b286-30ddf0d3a54f" />
+
+
+像素xor
+
+<img width="1834" height="1009" alt="image" src="https://github.com/user-attachments/assets/3001345d-1584-4c93-84e9-2cde8246ae50" />
+
+
+分块置乱
+
+<img width="1834" height="1009" alt="image" src="https://github.com/user-attachments/assets/10eb6655-d359-4a14-8b54-6352e0aecd1f" />
+
+
+图片遮挡式加密解密：
 
 <img width="1844" height="1080" alt="image" src="https://github.com/user-attachments/assets/47cb515b-c35a-4305-9dd4-d628584eb632" />
 
