@@ -83,7 +83,7 @@ namespace EncryptTools.Ui
             _cbMode.SelectedIndex = 1;
             _cbMode.DropDown += (_, __) => SetComboDropDownWidth(_cbMode, comboMaxW);
             SetComboDropDownWidth(_cbMode, comboMaxW);
-            _chkPixelation = new CheckBox { Text = "像素化", AutoSize = true, Margin = new Padding(4, 6, 8, 0), Checked = true };
+            _chkPixelation = new CheckBox { Text = "像素化", AutoSize = true, Margin = new Padding(4, 6, 8, 0), Checked = false };
             _cbBlock = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 4, 8, 4), MinimumSize = new Size(56, 0), MaximumSize = new Size(comboMaxW, 0), Width = 72 };
             _cbBlock.Items.AddRange(new object[] { "4×4", "8×8", "16×16", "24×24", "32×32", "48×48", "64×64" });
             _cbBlock.SelectedIndex = 2;
