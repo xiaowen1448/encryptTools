@@ -430,6 +430,7 @@ public partial class FileWorkspaceView : UserControl
                     Iterations = 200_000,
                     AesKeySizeBits = 256,
                     Log = WriteLog,
+                    FileProgress = (p, t) => RunUi(() => SetStatusSafe($"执行加密中… ({p}/{t})")),
                     EncryptedExtension = encryptedExt,
                     PasswordFileHash = pwdHash
                 };
@@ -520,6 +521,7 @@ public partial class FileWorkspaceView : UserControl
                         Iterations = 200_000,
                         AesKeySizeBits = 256,
                         Log = WriteLog,
+                        FileProgress = (p, t) => RunUi(() => SetStatusSafe($"执行解密中… ({p}/{t})")),
                         EncryptedExtension = encryptedExt,
                         PasswordFileHash = pwdHash
                     };
@@ -556,6 +558,7 @@ public partial class FileWorkspaceView : UserControl
                     Iterations = 200_000,
                     AesKeySizeBits = 256,
                     Log = WriteLog,
+                    FileProgress = (p, t) => RunUi(() => SetStatusSafe($"执行解密中… ({p}/{t})")),
                     EncryptedExtension = encryptedExt,
                     PasswordFileHash = pwdHash
                 };

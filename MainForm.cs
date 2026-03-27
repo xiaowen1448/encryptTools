@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -83,19 +84,58 @@ namespace EncryptTools
 
                 _cardFile.PrimaryClick += async (_, __) =>
                 {
-                    using var dlg = new OpenFileDialog { Title = "选择要加密/解密的文件", CheckFileExists = true };
-                    if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                    // 如果未选择路径，打开对话框让用户选择（仅导入路径，不立即开始加密）
+                    if (string.IsNullOrWhiteSpace(_cfg?.SourcePath) || (!File.Exists(_cfg.SourcePath) && !Directory.Exists(_cfg.SourcePath)))
+                    {
+                        using var dlg = new OpenFileDialog { Title = "选择要加密/解密的文件", CheckFileExists = false };
+                        if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
-                    _cfg.SourcePath = dlg.FileName;
-                    try { ConfigHelper.Save(_cfg); } catch { }
-                    _statusLeft.Text = "开始处理文件…";
+                        _cfg.SourcePath = dlg.FileName;
+                        try { ConfigHelper.Save(_cfg); } catch { }
+                        _statusLeft.Text = $"已选择: {_cfg.SourcePath}";
+                        // 按用户要求：导入路径后不立即递归扫描大目录。提醒用户点击加密开始计算并执行。
+                        MessageBox.Show(this, "路径已导入。点击“加密当前剪贴板/加密”按钮以开始计算文件统计并执行加密。", "已导入", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
 
-                    // 默认做“加密”，解密可以后续在卡片内做二级按钮
-                    await StartProcessAsync(true);
-                    _statusLeft.Text = "就绪";
+                    // 已有路径：先异步递归计算文件数量与总大小，再询问是否开始加密
+                    try
+                    {
+                        _statusLeft.Text = "正在统计文件...";
+                        var cts = new CancellationTokenSource();
+                        var progress = new Progress<(long files, long bytes)>(t =>
+                        {
+                            // 实时更新状态，显示已扫描文件数与大小（近似）
+                            _statusLeft.Text = $"扫描中: {t.files} 个文件, {FormatBytes(t.bytes)}";
+                        });
+
+                        var (filesCount, totalBytes) = await CountFilesAndBytesAsync(_cfg.SourcePath, recursive: true, progress, cts.Token);
+                        _statusLeft.Text = $"检测完成: {filesCount} 个文件, {FormatBytes(totalBytes)}";
+
+                        var ask = MessageBox.Show(this, $"检测到 {filesCount} 个文件，总大小 {FormatBytes(totalBytes)}。\n是否开始加密？", "确认", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                        if (ask == DialogResult.Yes)
+                        {
+                            _statusLeft.Text = "开始处理文件…";
+                            await StartProcessAsync(true);
+                            _statusLeft.Text = "就绪";
+                        }
+                        else
+                        {
+                            _statusLeft.Text = "已取消";
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        _statusLeft.Text = "已取消";
+                    }
+                    catch (Exception ex)
+                    {
+                        _statusLeft.Text = "就绪";
+                        MessageBox.Show(this, "统计文件时出错: " + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
                 };
 
-                _cardFile.FileDropped += async (_, e) =>
+                _cardFile.FileDropped += (_, e) =>
                 {
                     try
                     {
@@ -103,9 +143,8 @@ namespace EncryptTools
                         {
                             _cfg.SourcePath = files[0];
                             try { ConfigHelper.Save(_cfg); } catch { }
-                            _statusLeft.Text = "开始处理文件…";
-                            await StartProcessAsync(true);
-                            _statusLeft.Text = "就绪";
+                            _statusLeft.Text = $"路径已导入: {_cfg.SourcePath}";
+                            // 不在此处开始处理；等待用户点击加密按钮后再递归统计与执行
                         }
                     }
                     catch
@@ -272,6 +311,17 @@ namespace EncryptTools
                     Iterations = iterations,
                     AesKeySizeBits = aesKeySizeBits,
                     Log = _ => { } // UI v0.1: no log box in main page
+                    ,
+                    FileProgress = (processedFiles, totalFiles) =>
+                    {
+                        try
+                        {
+                            var txt = $"处理中… ({processedFiles}/{totalFiles})";
+                            if (this.InvokeRequired) this.BeginInvoke(new Action(() => _statusLeft.Text = txt));
+                            else _statusLeft.Text = txt;
+                        }
+                        catch { }
+                    }
                 };
 
                 var encryptor = new FileEncryptor(options);
@@ -314,6 +364,96 @@ namespace EncryptTools
                 _cts = null;
                 SetBusy(false);
             }
+        }
+
+        /// <summary>
+        /// 异步计算路径下文件数量与总字节数（在后台线程执行，期间不会阻塞 UI）。
+        /// progress 可用于实时上报已扫描文件与字节数。
+        /// </summary>
+        private Task<(long files, long bytes)> CountFilesAndBytesAsync(string path, bool recursive, IProgress<(long files, long bytes)>? progress, CancellationToken ct)
+        {
+            return Task.Run(() =>
+            {
+                long files = 0;
+                long bytes = 0;
+
+                if (ct.IsCancellationRequested) ct.ThrowIfCancellationRequested();
+
+                try
+                {
+                    if (File.Exists(path))
+                    {
+                        try
+                        {
+                            var fi = new FileInfo(path);
+                            files = 1;
+                            bytes = fi.Length;
+                            progress?.Report((files, bytes));
+                        }
+                        catch { }
+                        return (files, bytes);
+                    }
+
+                    // 迭代遍历目录，避免 EnumerateFiles(..., AllDirectories) 在遇到受限目录时抛出并导致中断
+                    var stack = new System.Collections.Generic.Stack<string>();
+                    stack.Push(path);
+
+                    while (stack.Count > 0)
+                    {
+                        if (ct.IsCancellationRequested) ct.ThrowIfCancellationRequested();
+                        var dir = stack.Pop();
+                        try
+                        {
+                            IEnumerable<string> fileEnum;
+                            try { fileEnum = Directory.EnumerateFiles(dir); }
+                            catch { fileEnum = Array.Empty<string>(); }
+                            foreach (var f in fileEnum)
+                            {
+                                if (ct.IsCancellationRequested) ct.ThrowIfCancellationRequested();
+                                try
+                                {
+                                    var fi = new FileInfo(f);
+                                    files++;
+                                    bytes += fi.Length;
+                                }
+                                catch { }
+                                if ((files & 0x3FF) == 0) // 每1024个文件更新一次，避免频繁 UI 调用
+                                    progress?.Report((files, bytes));
+                            }
+
+                            if (recursive)
+                            {
+                                IEnumerable<string> dirEnum;
+                                try { dirEnum = Directory.EnumerateDirectories(dir); }
+                                catch { dirEnum = Array.Empty<string>(); }
+                                foreach (var sub in dirEnum)
+                                {
+                                    stack.Push(sub);
+                                }
+                            }
+                        }
+                        catch { /* 忽略单目录异常，继续 */ }
+                    }
+                }
+                catch (OperationCanceledException) { throw; }
+                catch { /* 忽略其它错误，返回已有统计 */ }
+
+                progress?.Report((files, bytes));
+                return (files, bytes);
+            }, ct);
+        }
+
+        private static string FormatBytes(long bytes)
+        {
+            if (bytes < 1024) return bytes + " B";
+            double kb = bytes / 1024.0;
+            if (kb < 1024) return kb.ToString("0.##") + " KB";
+            double mb = kb / 1024.0;
+            if (mb < 1024) return mb.ToString("0.##") + " MB";
+            double gb = mb / 1024.0;
+            if (gb < 1024) return gb.ToString("0.##") + " GB";
+            double tb = gb / 1024.0;
+            return tb.ToString("0.##") + " TB";
         }
 
         // v0.1 新版首页不展示日志/高级参数控件；保留设置与文件处理入口

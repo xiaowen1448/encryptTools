@@ -41,7 +41,11 @@ namespace EncryptTools.Ui
         private NumericUpDown _numOverlayOpacity = null!;
         private List<string> _customIconPaths = new List<string>();
         private bool _lastActionWasDecrypt;
-        private ToolTip? _toolTip;
+    private ToolTip? _toolTip;
+    // 中部就绪/状态标签（用于显示 "就绪" / 处理进度文字）
+    private Label? _centerStatusLabel;
+    // 文件级别进度回调：(processedFiles, totalFiles)
+    public Action<long, long>? FileProgress { get; set; }
 
         public ImageWorkspacePanel(Action<string> log, Action<double>? reportProgress = null)
         {
@@ -224,8 +228,8 @@ namespace EncryptTools.Ui
             placeholder.Visible = true;
 
             var bottomStatus = new Panel { Dock = DockStyle.Fill };
-            var lblStatus = new Label { Text = "就绪", Dock = DockStyle.Left, AutoSize = true };
-            bottomStatus.Controls.Add(lblStatus);
+            _centerStatusLabel = new Label { Text = "就绪", Dock = DockStyle.Left, AutoSize = true };
+            bottomStatus.Controls.Add(_centerStatusLabel);
 
             root.Controls.Add(toolbar, 0, 0);
             root.Controls.Add(contentHost, 0, 1);
@@ -429,8 +433,54 @@ namespace EncryptTools.Ui
             {
                 var modeNow = (ImageMode)Math.Max(0, _cbMode.SelectedIndex);
 
-                int total = _sheetTabs.TabPages.Count;
-                for (int i = 0; i < total; i++)
+                // 先在 UI 线程快照路径列表
+                var tabCount = _sheetTabs.TabPages.Count;
+                var pathSnapshot = new List<string>(tabCount);
+                for (int ti = 0; ti < tabCount; ti++)
+                {
+                    var tp = _sheetTabs.TabPages[ti];
+                    var p = tp.Tag is ImageSheetState ss ? ss.Path : tp.Tag as string;
+                    if (!string.IsNullOrWhiteSpace(p)) pathSnapshot.Add(p!);
+                }
+
+                // 异步统计工作区内所有图片文件总数（展开文件夹），避免阻塞 UI
+                long total = 0;
+                try
+                {
+                    total = await Task.Run(() =>
+                    {
+                        long cnt = 0;
+                        foreach (var p in pathSnapshot)
+                        {
+                            try
+                            {
+                                if (Directory.Exists(p))
+                                {
+                                    try
+                                    {
+                                        cnt += Directory.EnumerateFiles(p, "*.*", SearchOption.AllDirectories)
+                                            .Count(f => IsImageFile(f));
+                                    }
+                                    catch { }
+                                }
+                                else if (File.Exists(p))
+                                {
+                                    if (IsImageFile(p)) cnt += 1;
+                                }
+                            }
+                            catch { }
+                        }
+                        return cnt;
+                    }).ConfigureAwait(true);
+                }
+                catch { }
+
+                if (total <= 0) total = pathSnapshot.Count; // 兜底：至少按页签数计数
+
+                long processedCount = 0;
+                try { FileProgress?.Invoke(0, total); } catch { }
+
+                for (int i = 0; i < tabCount; i++)
                 {
                     var tab = _sheetTabs.TabPages[i];
                     var path = tab.Tag is ImageSheetState s ? s.Path : tab.Tag as string;
@@ -444,7 +494,7 @@ namespace EncryptTools.Ui
                     {
                         using var orig = Image.FromFile(path);
                         processed = ApplyPixelEffect(orig, options, password, encrypt: true);
-                        ((IProgress<int>)progress).Report((i + 1) * 100 / total);
+                        ((IProgress<int>)progress).Report((int)(processedCount + 1 * 100 / Math.Max(1, total)));
                     }).ConfigureAwait(true);
                     if (processed != null)
                     {
@@ -461,7 +511,6 @@ namespace EncryptTools.Ui
                                 }
                             }
                         }
-                        // 保存带遮挡的图，解密时用密码恢复块再反向解密
                         coreEncrypted = null;
                     }
                     if (processed != null && !rightBox.IsDisposed)
@@ -469,6 +518,10 @@ namespace EncryptTools.Ui
                         SetPreviewImagePreserveZoom(rightBox, processed);
                         tab.Tag = new ImageSheetState { Path = path, EncryptedImage = (Bitmap)processed.Clone(), Options = options };
                         _log($"[{DateTime.Now:HH:mm:ss}] 加密完成: {Path.GetFileName(path)}");
+                        // 上报按文件展开的已处理计数
+                        try { processedCount++; } catch { }
+                        try { FileProgress?.Invoke(processedCount, total); } catch { }
+                        try { SetCenterStatusText($"加密中… ({processedCount}/{total})"); } catch { }
                     }
                 }
                 _log($"[{DateTime.Now:HH:mm:ss}] 加密预览完成。");
@@ -609,8 +662,57 @@ namespace EncryptTools.Ui
             }
             catch { }
 
-            int total = _sheetTabs.TabPages.Count;
-            for (int i = 0; i < total; i++)
+            // 统计要解密的文件总数（展开文件夹），避免在 UI 线程做大量 IO
+            var tabCount = _sheetTabs.TabPages.Count;
+            var pathSnapshot = new List<string>(tabCount);
+            for (int ti = 0; ti < tabCount; ti++)
+            {
+                var tp = _sheetTabs.TabPages[ti];
+                if (tp.Tag is ImageSheetState ss)
+                {
+                    if (!string.IsNullOrWhiteSpace(ss.Path)) pathSnapshot.Add(ss.Path);
+                }
+                else
+                {
+                    var p = tp.Tag as string;
+                    if (!string.IsNullOrWhiteSpace(p)) pathSnapshot.Add(p);
+                }
+            }
+
+            long total = 0;
+            try
+            {
+                total = await Task.Run(() =>
+                {
+                    long cnt = 0;
+                    foreach (var p in pathSnapshot)
+                    {
+                        try
+                        {
+                            if (Directory.Exists(p))
+                            {
+                                try
+                                {
+                                    cnt += Directory.EnumerateFiles(p, "*.*", SearchOption.AllDirectories)
+                                        .Count(f => IsImageFile(f));
+                                }
+                                catch { }
+                            }
+                            else if (File.Exists(p))
+                            {
+                                if (IsImageFile(p)) cnt += 1;
+                            }
+                        }
+                        catch { }
+                    }
+                    return cnt;
+                }).ConfigureAwait(true);
+            }
+            catch { }
+
+            if (total <= 0) total = pathSnapshot.Count;
+
+            for (int i = 0; i < tabCount; i++)
             {
                 var tab = _sheetTabs.TabPages[i];
                 if (tab.Tag is not ImageSheetState state)
@@ -701,6 +803,20 @@ namespace EncryptTools.Ui
             return null;
         }
 
+        /// <summary>
+        /// 从外部或本面板内部安全地设置中部状态文本。
+        /// </summary>
+        public void SetCenterStatusText(string text)
+        {
+            if (_centerStatusLabel == null) return;
+            try
+            {
+                if (_centerStatusLabel.InvokeRequired) _centerStatusLabel.BeginInvoke(new Action(() => _centerStatusLabel.Text = text));
+                else _centerStatusLabel.Text = text;
+            }
+            catch { }
+        }
+
         private sealed class ImageSheetState
         {
             public string Path = "";
@@ -758,6 +874,18 @@ namespace EncryptTools.Ui
         }
 
         private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".jfif", ".jpe", ".bmp", ".gif" };
+
+        private static bool IsImageFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return false;
+            try
+            {
+                var ext = Path.GetExtension(path);
+                if (string.IsNullOrWhiteSpace(ext)) return false;
+                return ImageExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase) || string.Equals(ext, ".ico", StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
 
         private void AddImagePath(string path)
         {

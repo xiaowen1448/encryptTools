@@ -175,6 +175,17 @@ namespace EncryptTools
                     Iterations = 200_000,
                     AesKeySizeBits = 256,
                     Log = AppendLog
+                    ,
+                    FileProgress = (p, t) =>
+                    {
+                        try
+                        {
+                            var title = $"encryptTools - 文件快速加密测试 ({p}/{t})";
+                            if (this.InvokeRequired) this.BeginInvoke(new Action(() => this.Text = title));
+                            else this.Text = title;
+                        }
+                        catch { }
+                    }
                 };
 
                 var enc = new FileEncryptor(options);

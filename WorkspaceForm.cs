@@ -39,6 +39,8 @@ namespace EncryptTools
             public string Kind = "文件加密";
             public string? SourcePath;
             public TextBoxBase LogBox = null!;
+            // 中部就绪/状态文本（位于工作区中部的就绪文字区域），用于显示处理/总计文件数等
+            public Label? CenterStatusLabel;
             // 文件工作区控件引用（Kind=="文件"时使用）
             public ListView? FileListView;
             public CheckBox? ChkPackExe;
@@ -305,7 +307,7 @@ namespace EncryptTools
                 Dock = DockStyle.Bottom
             };
             _statusLeft = new ToolStripStatusLabel("就绪") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
-            _statusRight = new ToolStripStatusLabel("新建工作区") { IsLink = true };
+            _statusRight = new ToolStripStatusLabel("新建文件工作区") { IsLink = true };
             _statusRight.Click += (_, __) => NewWorkspace("文件");
             _status.Items.Add(_statusLeft);
             _status.Items.Add(_statusRight);
@@ -555,6 +557,8 @@ namespace EncryptTools
                 CbAlgo = cbAlgo,
                 CbSuffix = cbSuffix
             };
+            // 将底部中部的就绪 Label 引用保存到上下文中，便于执行时展示每个工作区的处理进度文本
+            ctx.CenterStatusLabel = lblStatus;
             tab.Tag = ctx;
 
             var fileComboToolTip = new ToolTip { AutoPopDelay = 8000 };
@@ -1567,7 +1571,48 @@ namespace EncryptTools
                 var encryptedExt = GetSelectedEncryptedExtension(ctx.CbSuffix, algorithm);
                 // 单 exe 兼容：不拦截；加密时自动用 GcmRunner（.NET 8 已装）或 CBC（未装）
 
-                _statusLeft.Text = "执行加密中…";
+                // 先在后台统计工作区内所有要处理的文件总数（文件=1，目录=递归计数），用于统一的 processed/total 文本显示
+                long workspaceTotalFiles = 0;
+                try
+                {
+                    var pathsToCount = new List<string>(paths);
+                    workspaceTotalFiles = await Task.Run(() =>
+                    {
+                        long tot = 0;
+                        foreach (var p in pathsToCount)
+                        {
+                            try
+                            {
+                                if (File.Exists(p)) { tot += 1; continue; }
+                                if (Directory.Exists(p))
+                                {
+                                    try { tot += Directory.EnumerateFiles(p, "*", SearchOption.AllDirectories).LongCount(); } catch { }
+                                }
+                            }
+                            catch { }
+                        }
+                        return tot;
+                    }).ConfigureAwait(true);
+                }
+                catch { }
+
+                if (workspaceTotalFiles <= 0) workspaceTotalFiles = paths.Count;
+
+                // 将状态文本展示到工作区中部的就绪位置（若存在），否则回退到底部状态栏，显示统一 total
+                try
+                {
+                    var initTxt = $"执行加密中… (0/{workspaceTotalFiles})";
+                    if (ctx.CenterStatusLabel != null)
+                    {
+                        if (ctx.CenterStatusLabel.InvokeRequired) ctx.CenterStatusLabel.BeginInvoke(new Action(() => ctx.CenterStatusLabel.Text = initTxt));
+                        else ctx.CenterStatusLabel.Text = initTxt;
+                    }
+                    else
+                    {
+                        if (this.InvokeRequired) this.BeginInvoke(new Action(() => _statusLeft.Text = initTxt)); else _statusLeft.Text = initTxt;
+                    }
+                }
+                catch { }
                 var log = new Action<string>(m =>
                 {
                     if (string.IsNullOrEmpty(m)) return;
@@ -1616,6 +1661,7 @@ namespace EncryptTools
                     }
                     ctx.FileListView.Invalidate();
                 }
+                long globalProcessed = 0;
                 foreach (var source in paths)
                 {
                     if (!File.Exists(source) && !Directory.Exists(source)) { continue; }
@@ -1650,8 +1696,27 @@ namespace EncryptTools
                         }
 
                         bool useRandomExeName = ctx.ChkRandomFileName?.Checked ?? false;
+                        // 为了在封装 EXE 路径时也能在工作区中部展示进度，维护文件计数与每文件百分比的复合进度显示
+                        int packTotal = filesToPack.Count;
+                        int packIndex = 0;
                         foreach (var oneFile in filesToPack)
                         {
+                            packIndex++;
+                            // 在开始处理每个文件时先更新中部状态文本
+                            try
+                            {
+                                var startTxt = $"封装EXE: {packIndex}/{packTotal} {Path.GetFileName(oneFile)} (0%)";
+                                if (ctx.CenterStatusLabel != null)
+                                {
+                                    if (ctx.CenterStatusLabel.InvokeRequired) ctx.CenterStatusLabel.BeginInvoke(new Action(() => ctx.CenterStatusLabel.Text = startTxt));
+                                    else ctx.CenterStatusLabel.Text = startTxt;
+                                }
+                                else
+                                {
+                                    if (this.InvokeRequired) this.BeginInvoke(new Action(() => _statusLeft.Text = startTxt)); else _statusLeft.Text = startTxt;
+                                }
+                            }
+                            catch { }
                             if (!File.Exists(oneFile)) continue;
                             string outExe;
                             if (useRandomExeName)
@@ -1692,7 +1757,29 @@ namespace EncryptTools
                             try
                             {
                                 // 封装 EXE 的进度：以“生成临时加密文件 tmpEnc”为准，按读取字节实时更新 oneFile 的进度
-                                var packProgress = CreateFileListProgress(ctx.FileListView, oneFile, isDecrypt: false);
+                                var basePackProgress = CreateFileListProgress(ctx.FileListView, oneFile, isDecrypt: false);
+                                // capture current file index/name for the closure so UI updates reflect correct item
+                                int currentPackIndex = packIndex;
+                                string currentPackName = Path.GetFileName(oneFile);
+                                IProgress<double> packProgress = new Progress<double>(p =>
+                                {
+                                    try { basePackProgress.Report(p); } catch { }
+                                    try
+                                    {
+                                        int pct = Math.Min(100, Math.Max(0, (int)(p * 100)));
+                                        var txt = $"封装EXE: {currentPackIndex}/{packTotal} {currentPackName} ({pct}%)";
+                                        if (ctx.CenterStatusLabel != null)
+                                        {
+                                            if (ctx.CenterStatusLabel.InvokeRequired) ctx.CenterStatusLabel.BeginInvoke(new Action(() => ctx.CenterStatusLabel.Text = txt));
+                                            else ctx.CenterStatusLabel.Text = txt;
+                                        }
+                                        else
+                                        {
+                                            if (this.InvokeRequired) this.BeginInvoke(new Action(() => _statusLeft.Text = txt)); else _statusLeft.Text = txt;
+                                        }
+                                    }
+                                    catch { }
+                                });
                                 UpdateFileListProgress(ctx.FileListView, oneFile, 0);
 
                                 // 封装 exe 时若非 .NET 8 环境则一律使用 CBC，确保打包后的 exe 在本机可直接解密
@@ -1748,6 +1835,22 @@ namespace EncryptTools
                                         log($"[{DateTime.Now:HH:mm:ss}] 删除源文件失败: {exDel.Message}");
                                     }
                                 }
+                                // 当前文件封装成功：计入全局已处理数并更新中部文本
+                                try
+                                {
+                                    Interlocked.Increment(ref globalProcessed);
+                                    var txt = $"加密中… ({globalProcessed}/{workspaceTotalFiles})";
+                                    if (ctx.CenterStatusLabel != null)
+                                    {
+                                        if (ctx.CenterStatusLabel.InvokeRequired) ctx.CenterStatusLabel.BeginInvoke(new Action(() => ctx.CenterStatusLabel.Text = txt));
+                                        else ctx.CenterStatusLabel.Text = txt;
+                                    }
+                                    else
+                                    {
+                                        if (this.InvokeRequired) this.BeginInvoke(new Action(() => _statusLeft.Text = txt)); else _statusLeft.Text = txt;
+                                    }
+                                }
+                                catch { }
                             }
                             catch (Exception ex)
                             {
@@ -1805,8 +1908,32 @@ namespace EncryptTools
                         Iterations = 200_000,
                         AesKeySizeBits = 256,
                         Log = interceptLog,
+                        FileProgress = null,
                         EncryptedExtension = encryptedExt,
                         PasswordFileHash = pwdHash
+                    };
+                    // wrap per-source FileProgress so we convert per-source processedFiles into increments of globalProcessed
+                    long prevForThisSource = 0;
+                    options.FileProgress = (p, t) =>
+                    {
+                        try
+                        {
+                            long delta = p - prevForThisSource;
+                            if (delta < 0) delta = 0;
+                            prevForThisSource = p;
+                            Interlocked.Add(ref globalProcessed, delta);
+                            var txt = $"加密中… ({globalProcessed}/{workspaceTotalFiles})";
+                            if (ctx.CenterStatusLabel != null)
+                            {
+                                if (ctx.CenterStatusLabel.InvokeRequired) ctx.CenterStatusLabel.BeginInvoke(new Action(() => ctx.CenterStatusLabel.Text = txt));
+                                else ctx.CenterStatusLabel.Text = txt;
+                            }
+                            else
+                            {
+                                if (this.InvokeRequired) this.BeginInvoke(new Action(() => _statusLeft.Text = txt)); else _statusLeft.Text = txt;
+                            }
+                        }
+                        catch { }
                     };
                     var enc = new FileEncryptor(options);
                     var progress = CreateFileListProgress(ctx.FileListView, source, isDecrypt: false);
@@ -1822,7 +1949,19 @@ namespace EncryptTools
                     UpdateFileListItemPathStatus(ctx.FileListView, source, outPath, "已加密");
                 }
                 AppendLogAndScroll(ctx.LogBox, $"[{DateTime.Now:HH:mm:ss}] 加密完成。");
-                _statusLeft.Text = "加密完成。";
+                if (ctx.CenterStatusLabel != null)
+                {
+                    try
+                    {
+                        if (ctx.CenterStatusLabel.InvokeRequired) ctx.CenterStatusLabel.BeginInvoke(new Action(() => ctx.CenterStatusLabel.Text = "加密完成。"));
+                        else ctx.CenterStatusLabel.Text = "加密完成。";
+                    }
+                    catch { }
+                }
+                else
+                {
+                    _statusLeft.Text = "加密完成。";
+                }
             }
             catch (Exception ex)
             {
@@ -2170,6 +2309,24 @@ namespace EncryptTools
                         Iterations = 200_000,
                         AesKeySizeBits = 256,
                         Log = interceptLog,
+                        FileProgress = (p, t) =>
+                        {
+                            try
+                            {
+                                var txt = $"解密中… ({p}/{t})";
+                                if (ctx.CenterStatusLabel != null)
+                                {
+                                    if (ctx.CenterStatusLabel.InvokeRequired) ctx.CenterStatusLabel.BeginInvoke(new Action(() => ctx.CenterStatusLabel.Text = txt));
+                                    else ctx.CenterStatusLabel.Text = txt;
+                                }
+                                else
+                                {
+                                    if (this.InvokeRequired) this.BeginInvoke(new Action(() => _statusLeft.Text = txt));
+                                    else _statusLeft.Text = txt;
+                                }
+                            }
+                            catch { }
+                        },
                         EncryptedExtension = encryptedExt,
                         PasswordFileHash = pwdHash
                     };
@@ -2198,18 +2355,54 @@ namespace EncryptTools
                         UpdateFileListItemPathStatus(ctx.FileListView, p, p, "已解密");
                 }
                 AppendLogAndScroll(ctx.LogBox, $"[{DateTime.Now:HH:mm:ss}] 解密完成。");
-                _statusLeft.Text = "解密完成。";
+                if (ctx.CenterStatusLabel != null)
+                {
+                    try
+                    {
+                        if (ctx.CenterStatusLabel.InvokeRequired) ctx.CenterStatusLabel.BeginInvoke(new Action(() => ctx.CenterStatusLabel.Text = "解密完成。"));
+                        else ctx.CenterStatusLabel.Text = "解密完成。";
+                    }
+                    catch { }
+                }
+                else
+                {
+                    _statusLeft.Text = "解密完成。";
+                }
             }
             catch (NotSupportedException ex) when (ex.Message != null && (ex.Message.Contains("AES-GCM") || ex.Message.Contains("需要")))
             {
                 MessageBox.Show(RuntimeHelper.GetAesGcmRequirementMessage(), "需要 .NET 8", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 AppendLogAndScroll(ctx.LogBox, $"[{DateTime.Now:HH:mm:ss}] 解密失败: {ex.Message}");
-                _statusLeft.Text = "解密失败。";
+                if (ctx.CenterStatusLabel != null)
+                {
+                    try
+                    {
+                        if (ctx.CenterStatusLabel.InvokeRequired) ctx.CenterStatusLabel.BeginInvoke(new Action(() => ctx.CenterStatusLabel.Text = "解密失败。"));
+                        else ctx.CenterStatusLabel.Text = "解密失败。";
+                    }
+                    catch { }
+                }
+                else
+                {
+                    _statusLeft.Text = "解密失败。";
+                }
             }
             catch (Exception ex)
             {
                 AppendLogAndScroll(ctx.LogBox, $"[{DateTime.Now:HH:mm:ss}] 解密失败: {ex.Message}");
-                _statusLeft.Text = "解密失败。";
+                if (ctx.CenterStatusLabel != null)
+                {
+                    try
+                    {
+                        if (ctx.CenterStatusLabel.InvokeRequired) ctx.CenterStatusLabel.BeginInvoke(new Action(() => ctx.CenterStatusLabel.Text = "解密失败。"));
+                        else ctx.CenterStatusLabel.Text = "解密失败。";
+                    }
+                    catch { }
+                }
+                else
+                {
+                    _statusLeft.Text = "解密失败。";
+                }
             }
         }
 

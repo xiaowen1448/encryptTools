@@ -489,7 +489,9 @@ public partial class ImageWorkspaceView : UserControl
         _lastActionWasDecrypt = false;
         var iconPaths = GetSelectedIconPathsForEncrypt();
 
-        foreach (var item in SheetTabs.Items)
+    int total = SheetTabs.Items.Count;
+    int processed = 0;
+    foreach (var item in SheetTabs.Items)
         {
             if (item is not TabItem tab || tab.Tag is not TabImageHost host) continue;
             var path = host.FilePath;
@@ -526,13 +528,16 @@ public partial class ImageWorkspaceView : UserControl
                     Dispatcher.UIThread.Post(() => SetRightPreviewBitmap(host, bmp, preserveZoom: true));
                 }).ConfigureAwait(true);
                 AppendLog($"加密完成: {Path.GetFileName(path)}");
+                processed++;
+                Dispatcher.UIThread.Post(() => { if (LblImageStatus != null) LblImageStatus.Text = $"加密中… ({processed}/{total})"; });
             }
             catch (Exception ex)
             {
                 AppendLog($"加密失败 {Path.GetFileName(path)}: {ex.Message}");
             }
         }
-        AppendLog("批量加密完成。");
+    AppendLog("批量加密完成。");
+    Dispatcher.UIThread.Post(() => { if (LblImageStatus != null) LblImageStatus.Text = "批量加密完成。"; });
     }
 
     private async Task RunDecryptAsync()
@@ -552,7 +557,9 @@ public partial class ImageWorkspaceView : UserControl
         var currentPwdFileName = pwdPath != null ? Path.GetFileName(pwdPath) : null;
         _lastActionWasDecrypt = true;
 
-        foreach (var item in SheetTabs.Items)
+    int total = SheetTabs.Items.Count;
+    int processed = 0;
+    foreach (var item in SheetTabs.Items)
         {
             if (item is not TabItem tab || tab.Tag is not TabImageHost host) continue;
             if (host.EncryptedImageFull == null || host.CryptoOptions == null)
@@ -585,14 +592,17 @@ public partial class ImageWorkspaceView : UserControl
                     var bmp = ImageBitmapLoader.LoadAvaloniaBitmapFromImage(dec, 960);
                     Dispatcher.UIThread.Post(() => SetRightPreviewBitmap(host, bmp, preserveZoom: true));
                 }).ConfigureAwait(true);
-                AppendLog($"解密完成: {Path.GetFileName(host.FilePath)}");
+                    AppendLog($"解密完成: {Path.GetFileName(host.FilePath)}");
+                    processed++;
+                    Dispatcher.UIThread.Post(() => { if (LblImageStatus != null) LblImageStatus.Text = $"解密中… ({processed}/{total})"; });
             }
             catch (Exception ex)
             {
                 AppendLog($"解密失败 {Path.GetFileName(host.FilePath)}: {ex.Message}");
             }
         }
-        AppendLog("批量解密完成。");
+    AppendLog("批量解密完成。");
+    Dispatcher.UIThread.Post(() => { if (LblImageStatus != null) LblImageStatus.Text = "批量解密完成。"; });
     }
 
     private async Task SaveBatchAsync()
