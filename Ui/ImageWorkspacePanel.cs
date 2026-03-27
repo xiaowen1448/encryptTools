@@ -477,8 +477,11 @@ namespace EncryptTools.Ui
 
                 if (total <= 0) total = pathSnapshot.Count; // 兜底：至少按页签数计数
 
-                long processedCount = 0;
+                // 在 UI 显示加密开始状态
                 try { FileProgress?.Invoke(0, total); } catch { }
+                try { SetCenterStatusText($"加密中… (0/{total})"); } catch { }
+
+                long processedCount = 0;
 
                 for (int i = 0; i < tabCount; i++)
                 {
@@ -525,6 +528,9 @@ namespace EncryptTools.Ui
                     }
                 }
                 _log($"[{DateTime.Now:HH:mm:ss}] 加密预览完成。");
+                // 完成时设置为已完成加密
+                try { FileProgress?.Invoke(total, total); } catch { }
+                try { SetCenterStatusText("已完成加密"); } catch { }
             }
             finally
             {
@@ -712,6 +718,12 @@ namespace EncryptTools.Ui
 
             if (total <= 0) total = pathSnapshot.Count;
 
+            // 在 UI 显示解密开始状态
+            try { FileProgress?.Invoke(0, total); } catch { }
+            try { SetCenterStatusText($"解密中… (0/{total})"); } catch { }
+
+            long processedCount = 0;
+
             for (int i = 0; i < tabCount; i++)
             {
                 var tab = _sheetTabs.TabPages[i];
@@ -775,6 +787,9 @@ namespace EncryptTools.Ui
                     {
                         SetPreviewImagePreserveZoom(rightBox, decrypted);
                         _log($"[{DateTime.Now:HH:mm:ss}] 解密完成: {Path.GetFileName(state.Path)}");
+                        try { processedCount++; } catch { }
+                        try { FileProgress?.Invoke(processedCount, total); } catch { }
+                        try { SetCenterStatusText($"解密中… ({processedCount}/{total})"); } catch { }
                     }
                 }
                 catch
@@ -783,6 +798,9 @@ namespace EncryptTools.Ui
                 }
             }
             _log($"[{DateTime.Now:HH:mm:ss}] 批量解密完成。");
+            // 解密完成时更新为已完成解密
+            try { FileProgress?.Invoke(total, total); } catch { }
+            try { SetCenterStatusText("已完成解密"); } catch { }
         }
 
         private static PictureBox? GetRightPictureBox(TabPage tab)

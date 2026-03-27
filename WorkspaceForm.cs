@@ -1948,19 +1948,19 @@ namespace EncryptTools
                         outPath = source;
                     UpdateFileListItemPathStatus(ctx.FileListView, source, outPath, "已加密");
                 }
-                AppendLogAndScroll(ctx.LogBox, $"[{DateTime.Now:HH:mm:ss}] 加密完成。");
+                AppendLogAndScroll(ctx.LogBox, $"[{DateTime.Now:HH:mm:ss}] 已完成加密");
                 if (ctx.CenterStatusLabel != null)
                 {
                     try
                     {
-                        if (ctx.CenterStatusLabel.InvokeRequired) ctx.CenterStatusLabel.BeginInvoke(new Action(() => ctx.CenterStatusLabel.Text = "加密完成。"));
-                        else ctx.CenterStatusLabel.Text = "加密完成。";
+                        if (ctx.CenterStatusLabel.InvokeRequired) ctx.CenterStatusLabel.BeginInvoke(new Action(() => ctx.CenterStatusLabel.Text = "已完成加密"));
+                        else ctx.CenterStatusLabel.Text = "已完成加密";
                     }
                     catch { }
                 }
                 else
                 {
-                    _statusLeft.Text = "加密完成。";
+                    _statusLeft.Text = "已完成加密";
                 }
             }
             catch (Exception ex)
@@ -2069,7 +2069,7 @@ namespace EncryptTools
                     {
                         foreach (var p in paths)
                             UpdateFileListItemPathStatus(ctx.FileListView, p, p, "已解密");
-                        _statusLeft.Text = "已解密。";
+                        _statusLeft.Text = "已完成解密";
                         return;
                     }
                 }
@@ -2087,6 +2087,51 @@ namespace EncryptTools
                             decryptSources.Add(p);
                     }
                 }
+                // 先统计工作区内所有解密目标的文件总数（文件=1，目录递归计数），用于统一显示已处理/总计
+                long workspaceTotalFiles = 0;
+                try
+                {
+                    var snaps = new List<string>(decryptSources);
+                    workspaceTotalFiles = await Task.Run(() =>
+                    {
+                        long tot = 0;
+                        foreach (var p in snaps)
+                        {
+                            try
+                            {
+                                if (File.Exists(p)) { tot += 1; continue; }
+                                if (Directory.Exists(p))
+                                {
+                                    try { tot += Directory.EnumerateFiles(p, "*", SearchOption.AllDirectories).LongCount(); } catch { }
+                                }
+                            }
+                            catch { }
+                        }
+                        return tot;
+                    }).ConfigureAwait(true);
+                }
+                catch { }
+
+                if (workspaceTotalFiles <= 0) workspaceTotalFiles = decryptSources.Count;
+
+                // 在工作区中部显示统一解密中… (0/total)
+                try
+                {
+                    var initTxt = $"执行解密中… (0/{workspaceTotalFiles})";
+                    if (ctx.CenterStatusLabel != null)
+                    {
+                        if (ctx.CenterStatusLabel.InvokeRequired) ctx.CenterStatusLabel.BeginInvoke(new Action(() => ctx.CenterStatusLabel.Text = initTxt));
+                        else ctx.CenterStatusLabel.Text = initTxt;
+                    }
+                    else
+                    {
+                        if (this.InvokeRequired) this.BeginInvoke(new Action(() => _statusLeft.Text = initTxt)); else _statusLeft.Text = initTxt;
+                    }
+                }
+                catch { }
+
+                long globalProcessed = 0;
+
                 foreach (var source in decryptSources)
                 {
                     if (!File.Exists(source) && !Directory.Exists(source))
@@ -2309,27 +2354,35 @@ namespace EncryptTools
                         Iterations = 200_000,
                         AesKeySizeBits = 256,
                         Log = interceptLog,
-                        FileProgress = (p, t) =>
-                        {
-                            try
-                            {
-                                var txt = $"解密中… ({p}/{t})";
-                                if (ctx.CenterStatusLabel != null)
-                                {
-                                    if (ctx.CenterStatusLabel.InvokeRequired) ctx.CenterStatusLabel.BeginInvoke(new Action(() => ctx.CenterStatusLabel.Text = txt));
-                                    else ctx.CenterStatusLabel.Text = txt;
-                                }
-                                else
-                                {
-                                    if (this.InvokeRequired) this.BeginInvoke(new Action(() => _statusLeft.Text = txt));
-                                    else _statusLeft.Text = txt;
-                                }
-                            }
-                            catch { }
-                        },
+                        // Wrap per-source file progress into workspace-level aggregation
+                        FileProgress = null,
                         EncryptedExtension = encryptedExt,
                         PasswordFileHash = pwdHash
                     };
+                    // wrap FileProgress to aggregate into globalProcessed
+                    long prevForThisSource = 0;
+                    options.FileProgress = (p, t) =>
+                    {
+                        try
+                        {
+                            long delta = p - prevForThisSource;
+                            if (delta < 0) delta = 0;
+                            prevForThisSource = p;
+                            Interlocked.Add(ref globalProcessed, delta);
+                            var txt = $"解密中… ({globalProcessed}/{workspaceTotalFiles})";
+                            if (ctx.CenterStatusLabel != null)
+                            {
+                                if (ctx.CenterStatusLabel.InvokeRequired) ctx.CenterStatusLabel.BeginInvoke(new Action(() => ctx.CenterStatusLabel.Text = txt));
+                                else ctx.CenterStatusLabel.Text = txt;
+                            }
+                            else
+                            {
+                                if (this.InvokeRequired) this.BeginInvoke(new Action(() => _statusLeft.Text = txt)); else _statusLeft.Text = txt;
+                            }
+                        }
+                        catch { }
+                    };
+
                     var enc = new FileEncryptor(options);
                     UpdateFileListProgress(ctx.FileListView, source, 0, isDecrypt: true);
                     var decryptProgress = CreateFileListProgress(ctx.FileListView, source, isDecrypt: true);
