@@ -32,7 +32,15 @@ public static class ImageBitmapLoader
         }
         catch
         {
-            return null;
+            try
+            {
+                // 兼容 Icon(.ico) 等 ImageSharp 可能不直接支持的格式
+                return new Bitmap(path);
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 

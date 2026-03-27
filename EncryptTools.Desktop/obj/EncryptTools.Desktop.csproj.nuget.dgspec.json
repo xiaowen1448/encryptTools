@@ -62,7 +62,7 @@
         }
       },
       "runtimes": {
-        "osx-x64": {
+        "linux-x64": {
           "#import": []
         }
       }
@@ -146,12 +146,6 @@
           ],
           "assetTargetFallback": true,
           "warn": true,
-          "downloadDependencies": [
-            {
-              "name": "Microsoft.NETCore.App.Host.osx-x64",
-              "version": "[8.0.25, 8.0.25]"
-            }
-          ],
           "frameworkReferences": {
             "Microsoft.NETCore.App": {
               "privateAssets": "all"
@@ -161,7 +155,7 @@
         }
       },
       "runtimes": {
-        "osx-x64": {
+        "linux-x64": {
           "#import": []
         }
       }

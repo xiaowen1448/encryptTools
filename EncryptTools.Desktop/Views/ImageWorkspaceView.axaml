@@ -1,40 +1,66 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:EncryptTools.Desktop.Views"
              x:Class="EncryptTools.Desktop.Views.ImageWorkspaceView"
              VerticalAlignment="Stretch" HorizontalAlignment="Stretch">
+    <UserControl.Resources>
+        <views:IconFileNameToImageSourceConverter x:Key="IconFileNameToImageSourceConverter" />
+    </UserControl.Resources>
     <Grid RowDefinitions="Auto,*,Auto" Margin="4" VerticalAlignment="Stretch" MinHeight="240">
-        <!-- 与 Windows 版 ImageWorkspacePanel 工具栏风格接近：浅灰底 + 多行换行 -->
+        <!-- 工具栏：FlowPanel + WrapPanel 自适应布局（参考Windows ImageWorkspacePanel） -->
         <Border Background="#F0F0F0" BorderBrush="#D0D0D0" BorderThickness="1" CornerRadius="2" Padding="8,6">
-            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" MaxHeight="220">
-                <StackPanel Spacing="6">
-                    <WrapPanel Orientation="Horizontal">
-                        <Button Name="BtnSelect" Content="选择图片" Margin="0,0,8,4" MinHeight="28" />
-                        <Button Name="BtnPastePaths" Content="粘贴路径" Margin="0,0,8,4" MinHeight="28"
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" MaxHeight="280">
+                <StackPanel Spacing="4">
+                    <!-- 第一行：基本参数 -->
+                    <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Name="BtnSelect" Content="选择图片" Margin="0,0,8,0" MinHeight="28" MinWidth="80" />
+                        <Button Name="BtnPastePaths" Content="粘贴路径" Margin="0,0,8,0" MinHeight="28" MinWidth="80"
                                 ToolTip.Tip="从剪贴板添加图片路径。若拖入无效（常见于 Wayland），请在文件管理器中复制后点此处。" />
-                        <TextBlock Text="支持拖拽 / 粘贴路径" VerticalAlignment="Center" Foreground="#666" Margin="0,0,16,4" />
-                        <CheckBox Name="ChkPixelation" Content="像素化" IsChecked="True" Margin="0,0,8,4" VerticalAlignment="Center" />
-                        <TextBlock Text="加密模式:" VerticalAlignment="Center" Margin="0,0,4,4" />
-                        <ComboBox Name="CbMode" Width="120" Margin="0,0,12,4" />
-                        <TextBlock Text="密码文件:" VerticalAlignment="Center" Margin="0,0,4,4" />
-                        <ComboBox Name="CbPwdFile" Width="120" Margin="0,0,8,4" />
-                        <TextBlock Text="块:" VerticalAlignment="Center" Margin="0,0,4,4" />
-                        <ComboBox Name="CbBlock" Width="72" Margin="0,0,12,4" />
-                        <Button Name="BtnEncrypt" Content="加密(批量)" Background="#4169E1" Foreground="White" Margin="0,0,6,4" MinWidth="96" />
-                        <Button Name="BtnDecrypt" Content="解密(批量)" Background="#2E8B57" Foreground="White" Margin="0,0,6,4" MinWidth="96" />
-                        <Button Name="BtnSave" Content="保存输出(批量)" Margin="0,0,8,4" MinWidth="112" />
+                        <TextBlock Text="支持拖拽 / 粘贴路径" VerticalAlignment="Center" Foreground="#666" Margin="0,0,12,0" />
+                          <TextBlock Text="密码文件:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <ComboBox Name="CbPwdFile" Width="120" Margin="0,0,8,0" />
+                        <CheckBox Name="ChkPixelation" Content="像素化" IsChecked="False" Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <TextBlock Text="加密模式:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <ComboBox Name="CbMode" Width="120" Margin="0,0,8,0" />
+                        <TextBlock Text="块:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <ComboBox Name="CbBlock" Width="100" Margin="0,0,0,0" />
                     </WrapPanel>
-                    <WrapPanel Orientation="Horizontal">
-                        <CheckBox Name="ChkIconOverlay" Content="图标覆盖" IsChecked="True" Margin="0,0,8,4" VerticalAlignment="Center" />
-                        <Button Name="BtnImportIcons" Content="导入图标" Margin="0,0,8,4" MinWidth="88" />
-                        <TextBlock Text="图标:" VerticalAlignment="Center" Margin="0,0,4,4" />
-                        <ComboBox Name="CbIcons" Width="120" Margin="0,0,6,4" />
-                        <Image Name="IconPreview" Width="32" Height="32" Margin="0,0,8,4" Stretch="Uniform" />
-                        <TextBlock Text="透明度%:" VerticalAlignment="Center" Margin="0,0,4,4" />
-                        <Slider Name="SliderOpacity" Width="100" Minimum="1" Maximum="100" Value="80" Margin="0,0,12,4" VerticalAlignment="Center" />
-                        <TextBlock Text="图标块:" VerticalAlignment="Center" Margin="0,0,4,4" />
-                        <ComboBox Name="CbIconBlock" Width="72" Margin="0,0,8,4" />
-                        <CheckBox Name="ChkIconRandomize" Content="图标无序化" Margin="0,0,8,4" VerticalAlignment="Center" />
-                        <Button Name="BtnClearImages" Content="清空图片" Margin="0,0,0,4" />
+                    
+                    <!-- 第二行：图标覆盖相关 + 按钮区 -->
+                    <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <CheckBox Name="ChkIconOverlay" Content="图标覆盖" IsChecked="True" Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <Button Name="BtnImportIcons" Content="导入图标" Margin="0,0,8,0" MinHeight="28" MinWidth="80" />
+                        <TextBlock Text="图标:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <ComboBox Name="CbIcons" Width="160" MinWidth="140" Margin="0,0,6,0" SelectionChanged="CbIcons_OnSelectionChanged" DropDownOpened="CbIcons_OnDropDownOpened">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" MinWidth="140" MaxWidth="200">
+                                        <Image Width="16" Height="16" Source="{Binding Converter={StaticResource IconFileNameToImageSourceConverter}}" />
+                                        <TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="140" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Image Name="IconPreview" Width="32" Height="32" Margin="0,0,6,0" VerticalAlignment="Center" Stretch="Uniform" />
+                        <TextBlock Text="透明度:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <!-- 透明度微调框：文本框+按钮 -->
+                        <Grid ColumnDefinitions="60,*,*" Margin="0,0,8,0" VerticalAlignment="Center">
+                            <TextBox Name="TxbOpacity" Text="80" Margin="0,0,2,0" MinHeight="28" TextAlignment="Center" />
+                            <Button Name="BtnOpacityUp" Content="▲" Grid.Column="1" Margin="0,0,1,0" MinHeight="14" MinWidth="20" />
+                            <Button Name="BtnOpacityDown" Content="▼" Grid.Column="2" Margin="0,0,0,0" MinHeight="14" MinWidth="20" />
+                        </Grid>
+                        <TextBlock Text="图标块:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <ComboBox Name="CbIconBlock" Width="100" MinWidth="80" Margin="0,0,8,0" />
+                        <CheckBox Name="ChkIconRandomize" Content="图标无序化" Margin="0,0,0,0" VerticalAlignment="Center" />
+                         <Button Name="BtnEncrypt" Content="加密(批量)" Background="#4169E1" Foreground="White" Margin="0,0,6,0" MinHeight="28" MinWidth="96" />
+                        <Button Name="BtnDecrypt" Content="解密(批量)" Background="#2E8B57" Foreground="White" Margin="0,0,6,0" MinHeight="28" MinWidth="96" />
+                        <Button Name="BtnSave" Content="保存输出(批量)" Margin="0,0,8,0" MinHeight="28" MinWidth="112" />
+                        <Button Name="BtnClearImages" Content="清空图片" Margin="0,0,0,0" MinHeight="28" MinWidth="80" />
+                    </WrapPanel>
+                    
+                    <!-- 第三行：操作按钮（可独立换行） -->
+                    <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                       
                     </WrapPanel>
                 </StackPanel>
             </ScrollViewer>
@@ -45,7 +71,38 @@
                        Text="选择图片或拖拽到此处"
                        HorizontalAlignment="Center" VerticalAlignment="Center"
                        Foreground="#888888" FontSize="16" TextAlignment="Center" />
-            <TabControl Name="SheetTabs" IsVisible="False" SelectionChanged="SheetTabs_OnSelectionChanged" />
+            <!-- 多图片标签：横向滚动显示（参考Windows设计） -->
+            <TabControl Name="SheetTabs" IsVisible="False" SelectionChanged="SheetTabs_OnSelectionChanged" TabStripPlacement="Top">
+                <TabControl.Styles>
+                    <!-- TabStrip 使用 ScrollViewer 实现横向滚动，避免标签错乱 -->
+                    <Style Selector="TabControl /template/TabStrip">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate>
+                                    <Border BorderBrush="#D0D0D0" BorderThickness="0,0,0,1" Background="Transparent">
+                                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" 
+                                                      Height="36" Margin="0,0,0,0" Padding="0">
+                                            <ItemsPresenter />
+                                        </ScrollViewer>
+                                    </Border>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                    <!-- TabItem 样式：固定高度、最小宽度、自动换行省略号 -->
+                    <Style Selector="TabItem">
+                        <Setter Property="MinWidth" Value="120" />
+                        <Setter Property="Height" Value="36" />
+                        <Setter Property="Padding" Value="12,8,12,4" />
+                        <Setter Property="FontSize" Value="13" />
+                    </Style>
+                    <!-- TabItem 的标头内容居中对齐 -->
+                    <Style Selector="TabItem /template/ TextBlock">
+                        <Setter Property="VerticalAlignment" Value="Center" />
+                        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                    </Style>
+                </TabControl.Styles>
+            </TabControl>
         </Grid>
 
         <TextBlock Grid.Row="2" Name="LblImageStatus" Text="就绪" Margin="0,4,0,0" />

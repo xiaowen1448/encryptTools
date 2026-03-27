@@ -8,6 +8,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using EncryptTools;
@@ -65,7 +67,27 @@ public partial class FileWorkspaceView : UserControl
         // 本地 Bubble + handledEventsToo：ListBox 等可能吞掉 Drop 或 DragOver 置为 None，仅依赖主窗口转发不可靠
         DragDropCompat.AttachStandardFileDrop(this, p => ApplyDroppedPaths(p, PathImportKind.DragDrop));
         DragDropCompat.AttachTargetDragOverCopy(FilePathsGrid);
+
+        // 拖入视觉反馈：DragEnter 时高亮，DragLeave / Drop 时恢复
+        DropZone.AddHandler(DragDrop.DragEnterEvent, (s, e) =>
+        {
+            DropZone.BorderBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#4169E1"));
+            DropZone.BorderThickness = new Avalonia.Thickness(2);
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
+        
+        DropZone.AddHandler(DragDrop.DragLeaveEvent, (s, e) =>
+        {
+            DropZone.BorderBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#cccccc"));
+            DropZone.BorderThickness = new Avalonia.Thickness(1);
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
+        
+        DropZone.AddHandler(DragDrop.DropEvent, (s, e) =>
+        {
+            DropZone.BorderBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#cccccc"));
+            DropZone.BorderThickness = new Avalonia.Thickness(1);
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
     }
+
 
     /// <summary>
     /// 拖入/粘贴：对存在的文件或文件夹取绝对路径；列表展示文件名与完整路径。详细日志写入底部日志区。

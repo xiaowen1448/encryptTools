@@ -72,7 +72,7 @@ dotnet publish "${GCM_PROJ}" \
 echo
 echo "[encryptTools] Desktop launcher + PNG icon (Linux taskbar / menu)..."
 DESKTOP_FILE="${OUT_DESKTOP}/encryptTools.desktop"
-PNG_SRC="${SCRIPT_DIR}/EncryptTools.Desktop/Assets/app2.png"
+PNG_SRC="${SCRIPT_DIR}/app2.png"
 PNG_DST="${OUT_DESKTOP}/encryptTools.png"
 if [[ -f "${PNG_SRC}" ]]; then
   cp -f "${PNG_SRC}" "${PNG_DST}"

@@ -9,6 +9,8 @@ using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Avalonia.Platform.Storage;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using EncryptTools.Desktop.Dialogs;
 using EncryptTools.Desktop.Input;
 using EncryptTools.Desktop.Ui;
@@ -46,6 +48,110 @@ public partial class WorkspaceMainWindow : Window
         DragDropCompat.EnableAllowDropRecursive(this);
         // TabControl 在 XAML 填充早期会触发 SelectionChanged，当时 LogScrollHost 可能尚未构造
         SyncLogPanelToSelectedTab();
+        
+        // 加载 Logo 图像（使用根目录 app2.png）
+        try
+        {
+            var logo = this.FindControl<Image>("LogoImage");
+            if (logo != null)
+            {
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var logoPath = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "app2.png"));
+                if (File.Exists(logoPath))
+                {
+                    logo.Source = new Bitmap(logoPath);
+                }
+                else
+                {
+                    logo.Source = new Bitmap(AssetLoader.Open(new Uri("avares://encryptTools/Assets/app2.png")));
+                }
+                logo.DoubleTapped += OnLogoDoubleTapped;
+            }
+        }
+        catch { /* 可能 Logo 不存在 */ }
+        
+        // 设置窗口控制按钮的样式和内容
+        SetupWindowControlButtons();
+    }
+
+    private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            BeginMoveDrag(e);
+        }
+    }
+
+    private void OnLogoDoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)
+    {
+        // 双击 Logo 最大化/还原窗口
+        if (WindowState == WindowState.Maximized)
+        {
+            WindowState = WindowState.Normal;
+            var btnMaxRestore = this.FindControl<Button>("BtnMaxRestore");
+            if (btnMaxRestore != null && btnMaxRestore.Content is TextBlock tb)
+                tb.Text = "🗗";  // 最大化图标
+        }
+        else
+        {
+            WindowState = WindowState.Maximized;
+            var btnMaxRestore = this.FindControl<Button>("BtnMaxRestore");
+            if (btnMaxRestore != null && btnMaxRestore.Content is TextBlock tb)
+                tb.Text = "⬜";  // 还原图标
+        }
+    }
+
+    private void SetupWindowControlButtons()
+    {
+        var btnMin = this.FindControl<Button>("BtnMinimize");
+        var btnMax = this.FindControl<Button>("BtnMaxRestore");
+        var btnClose = this.FindControl<Button>("BtnClose");
+        
+        // 最小化按钮
+        if (btnMin != null)
+        {
+            btnMin.Content = new TextBlock { Text = "−", FontSize = 16, TextAlignment = Avalonia.Media.TextAlignment.Center };
+        }
+        
+        // 最大化/还原按钮
+        if (btnMax != null)
+        {
+            btnMax.Content = new TextBlock { Text = "🗗", FontSize = 14, TextAlignment = Avalonia.Media.TextAlignment.Center };
+        }
+        
+        // 关闭按钮
+        if (btnClose != null)
+        {
+            btnClose.Content = new TextBlock { Text = "✕", FontSize = 14, TextAlignment = Avalonia.Media.TextAlignment.Center };
+        }
+    }
+
+    private void OnBtnMinimize(object? sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState.Minimized;
+    }
+
+    private void OnBtnMaxRestore(object? sender, RoutedEventArgs e)
+    {
+        if (WindowState == WindowState.Maximized)
+        {
+            WindowState = WindowState.Normal;
+            var btnMaxRestore = this.FindControl<Button>("BtnMaxRestore");
+            if (btnMaxRestore != null && btnMaxRestore.Content is TextBlock tb)
+                tb.Text = "🗗";  // 最大化图标
+        }
+        else
+        {
+            WindowState = WindowState.Maximized;
+            var btnMaxRestore = this.FindControl<Button>("BtnMaxRestore");
+            if (btnMaxRestore != null && btnMaxRestore.Content is TextBlock tb)
+                tb.Text = "⬜";  // 还原图标
+        }
+    }
+
+    private void OnBtnClose(object? sender, RoutedEventArgs e)
+    {
+        Close();
     }
 
     /// <summary>
@@ -66,7 +172,7 @@ public partial class WorkspaceMainWindow : Window
 
     private void OnWindowDrop(object? sender, DragEventArgs e)
     {
-        if (e.Handled) return;
+        // 不因为先前 DragEnter/DragOver 已被标记为 Handled 而直接忽略 Drop
         List<string> paths;
         try
         {

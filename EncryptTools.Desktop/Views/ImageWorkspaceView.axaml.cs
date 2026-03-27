@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -8,7 +9,9 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Data.Converters;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -100,6 +103,16 @@ public partial class ImageWorkspaceView : UserControl
         BtnDecrypt.Click += async (_, _) => await RunDecryptAsync();
         BtnSave.Click += async (_, _) => await SaveBatchAsync();
 
+        // 透明度微调按钮事件
+        BtnOpacityUp.Click += (_, _) => ChangeOpacity(1);
+        BtnOpacityDown.Click += (_, _) => ChangeOpacity(-1);
+        TxbOpacity.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter)
+                ValidateOpacityInput();
+        };
+        TxbOpacity.LostFocus += (_, _) => ValidateOpacityInput();
+
         CbIcons.SelectionChanged += (_, _) => UpdateToolbarIconPreview();
 
         DragDrop.SetAllowDrop(this, true);
@@ -110,6 +123,22 @@ public partial class ImageWorkspaceView : UserControl
         DragDropCompat.AttachTargetDragOverCopy(DropHost);
         DragDropCompat.AttachTargetDragOverCopy(Placeholder);
         DragDropCompat.AttachTargetDragOverCopy(SheetTabs);
+
+        // 拖入视觉反馈：DragEnter 时高亮，DragLeave / Drop 时恢复
+        DropHost.AddHandler(DragDrop.DragEnterEvent, (s, e) =>
+        {
+            DropHost.Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#E8F4FF"));
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
+        
+        DropHost.AddHandler(DragDrop.DragLeaveEvent, (s, e) =>
+        {
+            DropHost.Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("Transparent"));
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
+        
+        DropHost.AddHandler(DragDrop.DropEvent, (s, e) =>
+        {
+            DropHost.Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("Transparent"));
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
     }
 
     /// <summary>
@@ -204,7 +233,7 @@ public partial class ImageWorkspaceView : UserControl
         UpdateStatus();
     }
 
-    private static string GetIcoDirectory()
+    internal static string GetIcoDirectory()
     {
         try
         {
@@ -276,8 +305,48 @@ public partial class ImageWorkspaceView : UserControl
 
     private void UpdateModeEnabled()
     {
-        CbMode.IsEnabled = ChkPixelation.IsChecked == true;
-        ChkIconRandomize.IsEnabled = ChkIconOverlay.IsChecked == true;
+        var pixelationEnabled = ChkPixelation.IsChecked == true;
+        CbMode.IsEnabled = pixelationEnabled;
+        CbBlock.IsEnabled = pixelationEnabled;
+
+        // 图标覆盖和像素化是独立功能
+        var iconOverlayEnabled = ChkIconOverlay.IsChecked == true;
+        BtnImportIcons.IsEnabled = iconOverlayEnabled;
+        CbIcons.IsEnabled = iconOverlayEnabled;
+        IconPreview.IsEnabled = iconOverlayEnabled;
+        CbIconBlock.IsEnabled = iconOverlayEnabled;
+        ChkIconRandomize.IsEnabled = iconOverlayEnabled;
+
+        // 其余控件不受此两个开关影响
+        CbPwdFile.IsEnabled = true;
+    }
+
+    /// <summary>
+    /// 调整透明度值（±1）
+    /// </summary>
+    private void ChangeOpacity(int delta)
+    {
+        if (int.TryParse(TxbOpacity.Text, out var current))
+        {
+            var newVal = Math.Clamp(current + delta, 1, 100);
+            TxbOpacity.Text = newVal.ToString();
+        }
+    }
+
+    /// <summary>
+    /// 验证和修正透明度输入值（范围：1-100）
+    /// </summary>
+    private void ValidateOpacityInput()
+    {
+        if (int.TryParse(TxbOpacity.Text, out var val))
+        {
+            val = Math.Clamp(val, 1, 100);
+            TxbOpacity.Text = val.ToString();
+        }
+        else
+        {
+            TxbOpacity.Text = "80";
+        }
     }
 
     private void UpdateStatus()
@@ -325,6 +394,16 @@ public partial class ImageWorkspaceView : UserControl
         IconPreview.Source = string.IsNullOrEmpty(ico) ? null : ImageBitmapLoader.LoadAvaloniaBitmap(ico, 32);
     }
 
+    private void CbIcons_OnDropDownOpened(object? sender, EventArgs e)
+    {
+        UpdateToolbarIconPreview();
+    }
+
+    private void CbIcons_OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        UpdateToolbarIconPreview();
+    }
+
     private ImageEffectOptions BuildOptionsFromUi()
     {
         int block = CbBlock.SelectedIndex switch
@@ -339,6 +418,9 @@ public partial class ImageWorkspaceView : UserControl
         };
         var salt = new byte[16];
         Compat.RngFill(salt);
+        var opacityValue = 80;
+        if (int.TryParse(TxbOpacity.Text, out var val))
+            opacityValue = Math.Clamp(val, 1, 100);
         var opt = new ImageEffectOptions
         {
             Mode = (ImageMode)Math.Max(0, Math.Min(4, CbMode.SelectedIndex)),
@@ -347,7 +429,7 @@ public partial class ImageWorkspaceView : UserControl
             SaltBase64 = Convert.ToBase64String(salt),
             PixelationEnabled = ChkPixelation.IsChecked == true,
             IconOverlayEnabled = ChkIconOverlay.IsChecked == true,
-            OverlayOpacityPercent = (int)SliderOpacity.Value,
+            OverlayOpacityPercent = opacityValue,
             IconOverlayBlockSizeHint = ParseIconBlockPx(),
             IconRandomize = ChkIconRandomize.IsChecked == true,
             PixelXorVersion = 2
@@ -910,7 +992,12 @@ public partial class ImageWorkspaceView : UserControl
             VerticalAlignment = VerticalAlignment.Stretch
         };
 
-        var splitRoot = new Grid { MinHeight = 240 };
+        // splitRoot 的高度由 DropHost 容器决定，不设置固定高度以避免内容拉伸
+        var splitRoot = new Grid 
+        { 
+            VerticalAlignment = VerticalAlignment.Stretch,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
         splitRoot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         splitRoot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
         splitRoot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -982,5 +1069,32 @@ public partial class ImageWorkspaceView : UserControl
         }
         if (Dispatcher.UIThread.CheckAccess()) Do();
         else Dispatcher.UIThread.Post(Do);
+    }
+}
+
+public class IconFileNameToImageSourceConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var fileName = value as string;
+        if (string.IsNullOrWhiteSpace(fileName) || string.Equals(fileName, "(未选择)", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        try
+        {
+            var icoDir = ImageWorkspaceView.GetIcoDirectory();
+            var full = Path.Combine(icoDir, fileName);
+            if (!File.Exists(full)) return null;
+            return ImageBitmapLoader.LoadAvaloniaBitmap(full, 16);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotSupportedException();
     }
 }

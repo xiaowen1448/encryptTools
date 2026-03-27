@@ -1,8 +1,16 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using EncryptTools.Desktop.Input;
 using EncryptTools.Desktop.Ui;
 
 namespace EncryptTools.Desktop.Views;
@@ -31,6 +39,64 @@ public partial class StringWorkspaceView : UserControl
         BtnDecrypt.Click += (_, _) => RunDecryptSim();
         BtnCopyOut.Click += async (_, _) => await CopyOutAsync();
         BtnSave.Click += async (_, _) => await SaveOutAsync();
+
+        // 拖放支持：允许拖入文本文件
+        DragDrop.SetAllowDrop(this, true);
+        DragDrop.SetAllowDrop(TxtIn, true);
+        DragDropCompat.AttachStandardFileDrop(this, p => ApplyDroppedPathsAsync(p));
+        DragDropCompat.AttachTargetDragOverCopy(TxtIn);
+
+        // 拖入视觉反馈
+        TxtIn.AddHandler(DragDrop.DragEnterEvent, (s, e) =>
+        {
+            TxtIn.Background = new SolidColorBrush(Color.Parse("#F0F8FF"));
+            TxtIn.BorderBrush = new SolidColorBrush(Color.Parse("#4169E1"));
+            TxtIn.BorderThickness = new Avalonia.Thickness(2);
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
+
+        TxtIn.AddHandler(DragDrop.DragLeaveEvent, (s, e) =>
+        {
+            TxtIn.Background = new SolidColorBrush(Colors.White);
+            TxtIn.BorderBrush = new SolidColorBrush(Color.Parse("#CCCCCC"));
+            TxtIn.BorderThickness = new Avalonia.Thickness(1);
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
+
+        TxtIn.AddHandler(DragDrop.DropEvent, (s, e) =>
+        {
+            TxtIn.Background = new SolidColorBrush(Colors.White);
+            TxtIn.BorderBrush = new SolidColorBrush(Color.Parse("#CCCCCC"));
+            TxtIn.BorderThickness = new Avalonia.Thickness(1);
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
+    }
+
+    private async void ApplyDroppedPathsAsync(IReadOnlyList<string> paths)
+    {
+        foreach (var raw in paths)
+        {
+            var resolved = DragDropPaths.TryResolveToExistingLocalPath(raw);
+            if (string.IsNullOrEmpty(resolved)) continue;
+            if (!File.Exists(resolved)) continue;
+
+            try
+            {
+                var ext = Path.GetExtension(resolved).ToLowerInvariant();
+                var textExtensions = new[] { ".txt", ".json", ".xml", ".csv", ".log", ".md", ".html", ".ts", ".cs", ".py", ".js" };
+                if (!textExtensions.Contains(ext))
+                {
+                    AppendLog($"[拖入·字符串工作区] 跳过非文本文件: {Path.GetFileName(resolved)}");
+                    continue;
+                }
+
+                var content = await File.ReadAllTextAsync(resolved, Encoding.UTF8);
+                TxtIn.Text = content;
+                AppendLog($"[拖入·字符串工作区] 已加载: {Path.GetFileName(resolved)} ({content.Length} 字符)");
+                return;
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"[拖入·字符串工作区] 读取失败: {Path.GetFileName(resolved)} - {ex.Message}");
+            }
+        }
     }
 
     private async Task PasteFromClipboardAsync()

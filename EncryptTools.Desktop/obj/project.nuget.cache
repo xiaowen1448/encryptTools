@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "LIvva5LpoaM=",
+  "dgSpecHash": "AOoKxWWVKJY=",
   "success": true,
   "projectFilePath": "/media/wx/A0F76268E87DBFEF/xiaowen_1448/encryptTools/EncryptTools.Desktop/EncryptTools.Desktop.csproj",
   "expectedPackageFiles": [
@@ -30,8 +30,7 @@
     "/home/wx/.nuget/packages/skiasharp.nativeassets.webassembly/2.88.9/skiasharp.nativeassets.webassembly.2.88.9.nupkg.sha512",
     "/home/wx/.nuget/packages/skiasharp.nativeassets.win32/2.88.9/skiasharp.nativeassets.win32.2.88.9.nupkg.sha512",
     "/home/wx/.nuget/packages/system.io.pipelines/8.0.0/system.io.pipelines.8.0.0.nupkg.sha512",
-    "/home/wx/.nuget/packages/tmds.dbus.protocol/0.21.2/tmds.dbus.protocol.0.21.2.nupkg.sha512",
-    "/home/wx/.nuget/packages/microsoft.netcore.app.host.osx-x64/8.0.25/microsoft.netcore.app.host.osx-x64.8.0.25.nupkg.sha512"
+    "/home/wx/.nuget/packages/tmds.dbus.protocol/0.21.2/tmds.dbus.protocol.0.21.2.nupkg.sha512"
   ],
   "logs": []
 }

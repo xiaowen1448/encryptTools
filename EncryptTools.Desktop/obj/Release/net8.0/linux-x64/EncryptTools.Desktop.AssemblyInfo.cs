@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("encryptTools")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+bda2197278ffcc4c328f753cbad6defaef33a37c")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8ead60c5839283e44d4d7a2f0f480f32bb4b01aa")]
 [assembly: System.Reflection.AssemblyProductAttribute("encryptTools")]
 [assembly: System.Reflection.AssemblyTitleAttribute("encryptTools")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

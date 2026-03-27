@@ -575,7 +575,7 @@
         }
       }
     },
-    "net8.0/osx-x64": {
+    "net8.0/linux-x64": {
       "Avalonia/11.3.12": {
         "type": "package",
         "dependencies": {
@@ -750,9 +750,6 @@
           "lib/net8.0/Avalonia.Native.dll": {
             "related": ".xml"
           }
-        },
-        "native": {
-          "runtimes/osx/native/libAvaloniaNative.dylib": {}
         }
       },
       "Avalonia.Remote.Protocol/11.3.12": {
@@ -871,6 +868,9 @@
         },
         "runtime": {
           "lib/net8.0/_._": {}
+        },
+        "native": {
+          "runtimes/linux-x64/native/libHarfBuzzSharp.so": {}
         }
       },
       "HarfBuzzSharp.NativeAssets.macOS/8.3.1.1": {
@@ -880,9 +880,6 @@
         },
         "runtime": {
           "lib/net8.0/_._": {}
-        },
-        "native": {
-          "runtimes/osx/native/libHarfBuzzSharp.dylib": {}
         }
       },
       "HarfBuzzSharp.NativeAssets.WebAssembly/8.3.1.1": {
@@ -959,6 +956,9 @@
         },
         "runtime": {
           "lib/net6.0/_._": {}
+        },
+        "native": {
+          "runtimes/linux-x64/native/libSkiaSharp.so": {}
         }
       },
       "SkiaSharp.NativeAssets.macOS/2.88.9": {
@@ -968,9 +968,6 @@
         },
         "runtime": {
           "lib/net6.0/_._": {}
-        },
-        "native": {
-          "runtimes/osx/native/libSkiaSharp.dylib": {}
         }
       },
       "SkiaSharp.NativeAssets.WebAssembly/2.88.9": {
@@ -1936,12 +1933,6 @@
         ],
         "assetTargetFallback": true,
         "warn": true,
-        "downloadDependencies": [
-          {
-            "name": "Microsoft.NETCore.App.Host.osx-x64",
-            "version": "[8.0.25, 8.0.25]"
-          }
-        ],
         "frameworkReferences": {
           "Microsoft.NETCore.App": {
             "privateAssets": "all"
@@ -1951,7 +1942,7 @@
       }
     },
     "runtimes": {
-      "osx-x64": {
+      "linux-x64": {
         "#import": []
       }
     }

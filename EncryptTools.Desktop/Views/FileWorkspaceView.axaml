@@ -22,6 +22,9 @@
                 <CheckBox Name="ChkOverwrite" Content="覆盖原文件" Margin="0,0,8,4" IsChecked="True" />
                 <CheckBox Name="ChkRecursive" Content="递归子目录" Margin="0,0,8,4" IsChecked="True" />
                 <CheckBox Name="ChkRandomName" Content="随机文件名" Margin="0,0,8,4" />
+                 <Button Name="BtnEncrypt" Content="加密" Background="#4169E1" Foreground="White" Margin="0,0,6,4"  MinWidth="88" />
+                 <Button Name="BtnDecrypt" Content="解密" Background="#2E8B57" Foreground="White" Margin="0,0,6,4" MinWidth="88" />
+                <Button Name="BtnCancel" Content="取消" MinWidth="88" Margin="0,0,6,4"  IsEnabled="False" />
             </WrapPanel>
         </ScrollViewer>
         <Border Name="DropZone" Grid.Row="1" BorderBrush="#ccc" BorderThickness="1" Margin="0,4,0,4"
@@ -108,10 +111,6 @@
                 </dg:DataGrid.Columns>
             </dg:DataGrid>
         </Border>
-        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="10">
-            <Button Name="BtnEncrypt" Content="加密" Background="#4169E1" Foreground="White" MinWidth="88" />
-            <Button Name="BtnDecrypt" Content="解密" Background="#2E8B57" Foreground="White" MinWidth="88" />
-            <Button Name="BtnCancel" Content="取消" MinWidth="88" IsEnabled="False" />
-        </StackPanel>
+     
     </Grid>
 </UserControl>

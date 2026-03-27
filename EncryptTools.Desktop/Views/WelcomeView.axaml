@@ -3,7 +3,7 @@
              x:Class="EncryptTools.Desktop.Views.WelcomeView">
     <StackPanel Margin="40" Spacing="16">
         <StackPanel Orientation="Horizontal" Spacing="16">
-            <Image Source="/Assets/app2.png" Width="72" Height="72"
+            <Image Name="LogoImage" Source="" Width="72" Height="72"
                    VerticalAlignment="Top" />
             <StackPanel Spacing="4">
                 <TextBlock Text="快速加密 / 解密" FontSize="28" FontWeight="Bold" />

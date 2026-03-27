@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using Avalonia.Media.Imaging;
 using EncryptTools;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -348,6 +349,30 @@ public static class ImageSharpPixelEffects
         }
     }
 
+    private static Image<Rgba32>? TryLoadIconImage(string path)
+    {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
+        try
+        {
+            return Image.Load<Rgba32>(path);
+        }
+        catch
+        {
+            try
+            {
+                using var bitmap = new Bitmap(path);
+                using var ms = new MemoryStream();
+                bitmap.Save(ms);
+                ms.Position = 0;
+                return Image.Load<Rgba32>(ms);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+
     /// <summary>与 Windows 版相同的图标遮挡（先采集块再绘制），并写入 options 中的加密块元数据。</summary>
     public static void ApplyIconOverlay(
         Image<Rgba32> target,
@@ -359,13 +384,9 @@ public static class ImageSharpPixelEffects
         var icons = new List<Image<Rgba32>>();
         foreach (var p in iconPaths)
         {
-            if (string.IsNullOrEmpty(p) || !File.Exists(p)) continue;
-            try
-            {
-                var img = Image.Load<Rgba32>(p);
+            var img = TryLoadIconImage(p);
+            if (img != null)
                 icons.Add(img);
-            }
-            catch { }
         }
         if (icons.Count == 0) return;
 
