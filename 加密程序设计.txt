@@ -1,0 +1,147 @@
+好的，我帮你完整设计这个“一机一码 + 加密 LIC + 批量保护 EXE”的系统。这个方案是纯 DIY 可落地的，核心使用 C# 实现（Windows EXE 最常见、最容易批量处理）。
+目标：  受保护的 EXE 启动时自动读取本地机器码 + 加密的 .lic 文件  
+只有当前机器的 LIC 匹配才能正常运行  
+防止复制、传输到其他电脑  
+支持批量加密多个 EXE（无需修改每个程序源码，只要一次加壳式保护）
+
+整体架构（推荐流程）开发者端（你）：运行批量保护工具（Protector.exe）→ 把原始 EXE 转为“带壳”的受保护 EXE（里面内置机器码验证逻辑）
+用户把自己的机器码发给你 → 你用LIC 生成工具生成加密的 .lic 文件发给用户
+
+用户端：把受保护 EXE + 对应的 .lic 放在同一目录
+运行 EXE → 自动校验机器码 + 解密 LIC → 匹配则正常运行，否则退出
+
+安全等级：基础防复制 + 防简单传播（可再叠加代码混淆如 ConfuserEx）
+
+1. 机器码生成（Machine Code）—— 唯一硬件指纹使用 WMI 获取多硬件信息 + SHA256 哈希，保证同一台机器每次生成一致。csharp
+
+using System;
+using System.Management;
+using System.Security.Cryptography;
+using System.Text;
+
+public class MachineCodeHelper
+{
+    public static string GetMachineCode()
+    {
+        string cpu = GetHardwareInfo("Win32_Processor", "ProcessorId");
+        string disk = GetHardwareInfo("Win32_DiskDrive", "SerialNumber");
+        string bios = GetHardwareInfo("Win32_BIOS", "SerialNumber");
+        string board = GetHardwareInfo("Win32_BaseBoard", "SerialNumber");
+
+        string raw = cpu + disk + bios + board;
+        using var sha256 = SHA256.Create();
+        byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(raw));
+        return BitConverter.ToString(hash).Replace("-", "").ToLower(); // 64位十六进制
+    }
+
+    private static string GetHardwareInfo(string wmiClass, string property)
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(wmiClass);
+            foreach (ManagementObject obj in searcher.Get())
+            {
+                return obj[property]?.ToString() ?? "";
+            }
+        }
+        catch { }
+        return "";
+    }
+}
+
+使用：string machineCode = MachineCodeHelper.GetMachineCode();2. LIC 加密 / 生成工具（LicenseHelper）LIC 文件内容是 JSON，AES-256 加密后保存为 xxx.liccsharp
+
+using System;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+
+public class LicenseInfo
+{
+    public string MachineCode { get; set; } = "";
+    public DateTime ExpireDate { get; set; }
+    public string Features { get; set; } = "full"; // 可扩展功能模块
+}
+
+public class LicenseHelper
+{
+    private static readonly byte[] Key = Encoding.UTF8.GetBytes("Your32ByteSecretKeyHere12345678"); // 32字节密钥，自己改
+    private static readonly byte[] IV = Encoding.UTF8.GetBytes("Your16ByteIVHere"); // 16字节IV
+
+    // 生成加密 LIC 文件
+    public static void GenerateLic(string machineCode, DateTime expire, string outputPath)
+    {
+        var lic = new LicenseInfo { MachineCode = machineCode, ExpireDate = expire };
+        string json = JsonSerializer.Serialize(lic);
+
+        using var aes = Aes.Create();
+        aes.Key = Key;
+        aes.IV = IV;
+
+        using var encryptor = aes.CreateEncryptor();
+        byte[] encrypted = encryptor.TransformFinalBlock(Encoding.UTF8.GetBytes(json), 0, json.Length);
+
+        File.WriteAllBytes(outputPath, encrypted);
+        Console.WriteLine($"LIC 生成成功：{outputPath}");
+    }
+
+    // 读取并解密 LIC
+    public static LicenseInfo? LoadLic(string licPath)
+    {
+        if (!File.Exists(licPath)) return null;
+        byte[] data = File.ReadAllBytes(licPath);
+
+        using var aes = Aes.Create();
+        aes.Key = Key;
+        aes.IV = IV;
+
+        using var decryptor = aes.CreateDecryptor();
+        byte[] decrypted = decryptor.TransformFinalBlock(data, 0, data.Length);
+
+        string json = Encoding.UTF8.GetString(decrypted);
+        return JsonSerializer.Deserialize<LicenseInfo>(json);
+    }
+}
+
+3. 受保护程序的启动验证逻辑（核心 checker）在你的程序 Program.cs 的 Main 最前面加入以下代码（或做成 DLL 注入）：csharp
+
+static void Main(string[] args)
+{
+    string licPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "license.lic");
+    var lic = LicenseHelper.LoadLic(licPath);
+
+    if (lic == null || lic.MachineCode != MachineCodeHelper.GetMachineCode() || lic.ExpireDate < DateTime.Now)
+    {
+        MessageBox.Show("授权失败！请联系作者获取正确的 LIC 文件。\n当前机器码：" + MachineCodeHelper.GetMachineCode(), "授权错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        Environment.Exit(1);
+    }
+
+    // 验证通过，继续执行原程序逻辑
+    // ... 你的原始代码 ...
+}
+
+这样你的 EXE 就变成了“读取机器码和 LIC 的程序”。4. 批量加密 EXE 工具（Protector）—— 你要设计的程序核心我给你一个完整可运行的控制台保护工具模板（C# Console App）：功能：批量选择文件夹里所有 .exe
+对每个 EXE 进行“加壳”：把原 EXE 加密后嵌入新生成的 Stub EXE 中
+新生成的 EXE 自带上面完整的机器码 + LIC 验证逻辑
+支持 .NET Framework / .NET Core EXE（最常见场景）
+
+实现思路（简单版，不需要动态编译）：预先准备一个 Stub 项目（带 checker 的空壳）
+Protector 把原 EXE 用 AES 加密 → 嵌入 Stub 的资源
+Stub 启动时先校验 LIC → 解密资源里的原 EXE → Assembly.Load 在内存运行（无文件落地，更安全）
+
+如果你需要完整 Stub + Protector 项目源码，告诉我：你的 EXE 是 .NET Framework 还是 .NET 6+？
+是否接受纯内存加载（推荐）还是允许临时文件？
+
+我可以立刻给你完整 Visual Studio 项目代码（包含 Protector.exe + Stub 模板）。额外加强建议（提升安全性）代码混淆：保护后用 ConfuserEx（免费开源）再混淆一次，防止反编译。
+反调试：在 checker 里加 Debugger.IsAttached 判断。
+在线激活（可选）：把 LIC 验证改为调用你的服务器接口。
+商业工具对比：如果不想自己写完整加壳，可以直接买 VProtect Pro 或 Virbox Protector（搜索结果中提到的专业一机一码加壳工具），但自己设计更灵活、成本为0。
+
+下一步你怎么做？告诉我你的 EXE 类型（.NET / native C++ / Delphi 等）
+需要完整 Protector 项目源码吗？（我可以直接给出可复制的全部代码）
+还是先要 LIC 生成工具的 WinForm 界面版？
+
+把你的需求补充一下，我马上给你下一步完整代码或优化方案！
+这样就能实现批量加密 + 一机一码 + 加密 LIC 的完整保护系统了。
+

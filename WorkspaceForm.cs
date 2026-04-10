@@ -7,6 +7,7 @@ using System.Linq;
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -197,15 +198,33 @@ namespace EncryptTools
             MainMenuStrip = _menu;
             Controls.Add(_menu);
 
+            // 创建外部容器，无边框
+            var contentPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.None,
+                BackColor = SystemColors.Control,
+                Padding = new Padding(0)
+            };
+
             // 中部：垂直 SplitContainer（上：工作区 Tab，下：日志区，均可拖拽调整高度）
             _vertSplit = new SplitContainer
             {
                 Dock = DockStyle.Fill,
                 Orientation = Orientation.Horizontal,
-                SplitterWidth = 4
+                SplitterWidth = 4,
+                BackColor = Color.FromArgb(180, 180, 180)
             };
             _vertSplit.SplitterDistance = 420;
+            
+            // 两个面板都不添加边框，让分隔线作为视觉分隔
             _vertSplit.Panel1.Padding = Padding.Empty;
+            _vertSplit.Panel1.BorderStyle = BorderStyle.None;
+            _vertSplit.Panel1.BackColor = SystemColors.Control;
+            
+            _vertSplit.Panel2.Padding = Padding.Empty;
+            _vertSplit.Panel2.BorderStyle = BorderStyle.None;
+            _vertSplit.Panel2.BackColor = SystemColors.Control;
 
             // 上：TabControl 工作区
             _tabWorkspaces = new TabControl
@@ -266,14 +285,23 @@ namespace EncryptTools
                 Font = new Font("Microsoft YaHei UI", 10f, FontStyle.Regular),
                 Location = new Point(46, 216)
             };
+            var btnMachineCode = new Button
+            {
+                Text = "创建机器码加密工作区",
+                AutoSize = true,
+                Font = new Font("Microsoft YaHei UI", 10f, FontStyle.Regular),
+                Location = new Point(46, 254)
+            };
             btnFile.Click += (_, __) => NewWorkspace("文件");
             btnString.Click += (_, __) => NewWorkspace("字符串");
             btnImage.Click += (_, __) => NewWorkspace("图片");
+            btnMachineCode.Click += (_, __) => NewWorkspace("机器码");
             welcomePanel.Controls.Add(title);
             welcomePanel.Controls.Add(subtitle);
             welcomePanel.Controls.Add(btnFile);
             welcomePanel.Controls.Add(btnString);
             welcomePanel.Controls.Add(btnImage);
+            welcomePanel.Controls.Add(btnMachineCode);
             welcomeTab.Controls.Add(welcomePanel);
             _tabWorkspaces.TabPages.Add(welcomeTab);
 
@@ -281,7 +309,12 @@ namespace EncryptTools
             _vertSplit.Panel1.Controls.Add(_tabWorkspaces);
 
             // 下：日志区域（当前选中工作区的独立日志 TextBox）
-            _logHost = new Panel { Dock = DockStyle.Fill };
+            _logHost = new Panel 
+            { 
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.None,
+                BackColor = SystemColors.Control
+            };
 
             // 为欢迎页初始化一个日志框
             var welcomeLog = new TextBox
@@ -289,7 +322,9 @@ namespace EncryptTools
                 Multiline = true,
                 ReadOnly = true,
                 ScrollBars = ScrollBars.Vertical,
-                Dock = DockStyle.Fill
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.None,
+                BackColor = SystemColors.Control
             };
             welcomeTab.Tag = new WorkspaceContext
             {
@@ -300,6 +335,9 @@ namespace EncryptTools
             _logHost.Controls.Add(welcomeLog);
 
             _vertSplit.Panel2.Controls.Add(_logHost);
+
+            // 将 SplitContainer 添加到外部容器
+            contentPanel.Controls.Add(_vertSplit);
 
             // 底部状态栏
             _status = new StatusStrip
@@ -313,7 +351,7 @@ namespace EncryptTools
             _status.Items.Add(_statusRight);
 
             SuspendLayout();
-            Controls.Add(_vertSplit);
+            Controls.Add(contentPanel);
             Controls.Add(_status);
             Controls.Add(_menu);
             ResumeLayout(true);
@@ -343,6 +381,9 @@ namespace EncryptTools
                     break;
                 case "图片":
                     CreateImageWorkspace();
+                    break;
+                case "机器码":
+                    CreateMachineCodeWorkspace();
                     break;
                 default:
                     CreateFileWorkspace();
@@ -400,10 +441,11 @@ namespace EncryptTools
             cbAlgo.SelectedIndex = 0;
             SetComboDropDownWidth(cbAlgo, comboMaxW);
             var lblSuffix = new Label { Text = "后缀:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
-            // 允许下拉选择常用后缀，也支持手动输入自定义后缀
+            // 后缀名下拉选择（支持手动输入，但使用 Flat 样式避免蓝色编辑UI）
             var cbSuffix = new ComboBox
             {
                 DropDownStyle = ComboBoxStyle.DropDown,
+                FlatStyle = FlatStyle.Flat,
                 Margin = new Padding(2, 2, 8, 2),
                 MinimumSize = new Size(70, 0),
                 MaximumSize = new Size(comboMaxW, 0),
@@ -412,15 +454,15 @@ namespace EncryptTools
             // 常用后缀列表
             cbSuffix.Items.AddRange(new object[]
             {
+                ".aes",
+                ".enc",
                 ".enc1",
                 ".enc2",
-                ".enc",
-                ".aes",
                 ".bin",
                 ".dat",
                 ".secure"
             });
-            cbSuffix.SelectedItem = ".enc1";
+            cbSuffix.SelectedItem = ".aes";
             SetComboDropDownWidth(cbSuffix, comboMaxW);
             var lblPwd = new Label { Text = "密码文件:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
             var cbPwdFile = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2, 2, 8, 2), MinimumSize = new Size(100, 0), MaximumSize = new Size(comboMaxW, 0), Width = 120 };
@@ -541,7 +583,9 @@ namespace EncryptTools
                 Multiline = true,
                 ReadOnly = true,
                 ScrollBars = RichTextBoxScrollBars.Vertical,
-                Dock = DockStyle.Fill
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.None,
+                BackColor = SystemColors.Control
             };
             var ctx = new WorkspaceContext
             {
@@ -741,7 +785,15 @@ namespace EncryptTools
 
             tab.Controls.Add(root);
 
-            var logBox = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill };
+            var logBox = new TextBox 
+            { 
+                Multiline = true, 
+                ReadOnly = true, 
+                ScrollBars = ScrollBars.Vertical, 
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.None,
+                BackColor = SystemColors.Control
+            };
             var ctx = new WorkspaceContext { Kind = "字符串", SourcePath = null, LogBox = logBox };
             tab.Tag = ctx;
 
@@ -791,7 +843,15 @@ namespace EncryptTools
                 BackColor = SystemColors.Control
             };
 
-            var logBox = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill };
+            var logBox = new TextBox 
+            { 
+                Multiline = true, 
+                ReadOnly = true, 
+                ScrollBars = ScrollBars.Vertical, 
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.None,
+                BackColor = SystemColors.Control
+            };
             void Log(string msg)
             {
                 if (string.IsNullOrWhiteSpace(msg)) return;
@@ -809,6 +869,1548 @@ namespace EncryptTools
             _logHost.Controls.Clear();
             _logHost.Controls.Add(logBox);
             _statusLeft.Text = "已创建新工作区：图片像素化加密 / 解密";
+        }
+
+        private void CreateMachineCodeWorkspace()
+        {
+            var index = _tabWorkspaces.TabPages.Count;
+            var tab = new TabPage($"机器码工作区 {index}")
+            {
+                BackColor = SystemColors.Control
+            };
+
+            // 复制文件工作区的布局结构
+            var root = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 4
+            };
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));       // 第一行工具栏（导入程序+机器码）
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));       // 第二行工具栏（其他按钮）
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // 主区域（程序预览）
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));   // 底部状态条
+
+            // 第一行工具栏：导入程序 + 机器码
+            var toolbarRow1 = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                BackColor = SystemColors.ControlLight,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                AutoScroll = false,
+                Padding = new Padding(6, 4, 6, 4)
+            };
+
+            var btnSelectProgram = new Button { Text = "选择程序", AutoSize = true, Margin = new Padding(0, 0, 6, 2) };
+            var lblDragHint = new Label { Text = "可拖拽EXE文件", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 6, 12, 0) };
+            
+            // 机器码输入
+            var lblMachineCode = new Label { Text = "机器码:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
+            var txbMachineCode = new TextBox { Width = 400, Margin = new Padding(2, 2, 8, 2) };
+
+            toolbarRow1.Controls.Add(btnSelectProgram);
+            toolbarRow1.Controls.Add(lblDragHint);
+            toolbarRow1.Controls.Add(lblMachineCode);
+            toolbarRow1.Controls.Add(txbMachineCode);
+
+            // 第二行工具栏：授权天数 + 密钥状态 + 图标选择 + 加密按钮 + 清空按钮
+            var toolbarRow2 = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                BackColor = SystemColors.ControlLight,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                AutoScroll = false,
+                Padding = new Padding(6, 4, 6, 4)
+            };
+            
+            // 授权天数
+            var lblDays = new Label { Text = "授权天数:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
+            var txbDays = new TextBox { Text = "365", Width = 60, Margin = new Padding(2, 2, 12, 2) };
+
+            // 密钥状态标签
+            var lblKeyStatus = new Label { Text = "❌未生成密钥", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(4, 6, 12, 0) };
+            var lblLicStatus = new Label { Text = "❌未生成授权", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(4, 6, 12, 0) };
+
+            // 图标选择区域
+            var lblIcon = new Label { Text = "程序图标:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
+            
+            // 图标预览框
+            var picIconPreview = new PictureBox
+            {
+                Width = 32,
+                Height = 32,
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BorderStyle = BorderStyle.FixedSingle,
+                Margin = new Padding(2, 2, 4, 2),
+                BackColor = Color.White
+            };
+            
+            // 图标选择下拉框
+            var cmbIconSource = new ComboBox
+            {
+                Width = 120,
+                Margin = new Padding(2, 4, 4, 2),
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            cmbIconSource.Items.Add("使用原图标");
+            cmbIconSource.Items.Add("导入图标");
+            cmbIconSource.SelectedIndex = 0;
+            
+            // 导入图标按钮
+            var btnImportIcon = new Button
+            {
+                Text = "浏览...",
+                AutoSize = true,
+                Margin = new Padding(2, 2, 8, 2),
+                Enabled = false
+            };
+
+            // 加密按钮
+            var btnEncrypt = new Button 
+            { 
+                Text = "执行加密", 
+                AutoSize = true, 
+                Margin = new Padding(8, 0, 4, 4),
+                BackColor = Color.FromArgb(0x4C, 0xAF, 0x50),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat
+            };
+            btnEncrypt.FlatAppearance.BorderSize = 0;
+
+            var btnClear = new Button { Text = "清空", AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
+
+            toolbarRow2.Controls.Add(lblDays);
+            toolbarRow2.Controls.Add(txbDays);
+            toolbarRow2.Controls.Add(lblKeyStatus);
+            toolbarRow2.Controls.Add(lblLicStatus);
+            toolbarRow2.Controls.Add(lblIcon);
+            toolbarRow2.Controls.Add(picIconPreview);
+            toolbarRow2.Controls.Add(cmbIconSource);
+            toolbarRow2.Controls.Add(btnImportIcon);
+            toolbarRow2.Controls.Add(btnEncrypt);
+            toolbarRow2.Controls.Add(btnClear);
+
+            // 中部：程序预览列表（复制文件工作区的ListView）
+            var lvPrograms = new ListView
+            {
+                Dock = DockStyle.Fill,
+                View = View.Details,
+                FullRowSelect = true,
+                AllowDrop = true,
+                OwnerDraw = true
+            };
+            lvPrograms.DrawColumnHeader += (s, e) => e.DrawDefault = true;
+            lvPrograms.DrawSubItem += (s, e) =>
+            {
+                if (e.ColumnIndex != 4) { e.DrawDefault = true; return; }
+                int raw = e.Item?.Tag is int v ? v : -1;
+                var r = e.Bounds;
+                if (r.Width <= 0 || r.Height <= 0) return;
+                e.Graphics.FillRectangle(SystemBrushes.Window, r);
+                
+                string text;
+                Color barColor;
+                int barW = 0;
+                
+                if (raw < 0)
+                {
+                    text = "-";
+                    barColor = Color.Gray;
+                }
+                else if (raw == 0)
+                {
+                    text = "待加密";
+                    barColor = Color.Gray;
+                }
+                else if (raw == 100)
+                {
+                    text = "已加密";
+                    barColor = Color.FromArgb(0x4C, 0xAF, 0x50); // 绿色
+                    barW = r.Width - 4;
+                }
+                else
+                {
+                    text = "加密中";
+                    barColor = Color.FromArgb(0xD3, 0x32, 0x2F); // 红色
+                    barW = (int)((r.Width - 4) * raw / 100.0);
+                }
+                
+                if (barW > 0)
+                {
+                    using (var brush = new SolidBrush(barColor))
+                    {
+                        var barRect = new Rectangle(r.X + 2, r.Y + 2, barW, r.Height - 4);
+                        e.Graphics.FillRectangle(brush, barRect);
+                    }
+                }
+                var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                e.Graphics.DrawString(text, e.Item?.ListView?.Font ?? SystemFonts.DefaultFont, SystemBrushes.ControlText, r, sf);
+            };
+            lvPrograms.Columns.Add("名称", 160);
+            lvPrograms.Columns.Add("路径", 280);
+            lvPrograms.Columns.Add("大小", 80);
+            lvPrograms.Columns.Add("机器码", 120);
+            lvPrograms.Columns.Add("状态", 100);
+
+            // 数据存储
+            string selectedProgramPath = "";
+            string generatedKeyPath = "";
+            string generatedLicPath = "";
+            string selectedIconPath = "";
+            string originalIconPath = "";
+            
+            // 使用默认目录保存key和lic文件
+            string keyDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "key");
+            string licDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lic");
+            Directory.CreateDirectory(keyDirectory);
+            Directory.CreateDirectory(licDirectory);
+
+            // 初始化状态显示
+          //  lblKeyStatus.Text = "已准备";
+            //lblLicStatus.Text = "已准备";
+
+            // 事件处理
+            btnSelectProgram.Click += (_, __) =>
+            {
+                using var dlg = new OpenFileDialog
+                {
+                    Title = "选择要加密的程序",
+                    Filter = "可执行文件 (*.exe)|*.exe"
+                };
+                if (dlg.ShowDialog() == DialogResult.OK)
+                {
+                    selectedProgramPath = dlg.FileName;
+                    var fi = new FileInfo(selectedProgramPath);
+                    var item = new ListViewItem(new[]
+                    {
+                        Path.GetFileName(selectedProgramPath),
+                        selectedProgramPath,
+                        $"{fi.Length / 1024} KB",
+                        txbMachineCode.Text,
+                        "待加密"
+                    });
+                    item.Tag = 0;
+                    lvPrograms.Items.Clear();
+                    lvPrograms.Items.Add(item);
+                    
+                    // 提取并显示原程序图标
+                    try
+                    {
+                        originalIconPath = ExtractIconFromExe(selectedProgramPath);
+                        if (!string.IsNullOrEmpty(originalIconPath) && File.Exists(originalIconPath))
+                        {
+                            using (var icon = Image.FromFile(originalIconPath))
+                            {
+                                picIconPreview.Image = new Bitmap(icon, 32, 32);
+                            }
+                            selectedIconPath = originalIconPath;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // 暂时不记录日志，ctx还未声明
+                        System.Diagnostics.Debug.WriteLine($"提取图标失败: {ex.Message}");
+                    }
+                }
+            };
+
+            lvPrograms.DragEnter += (s, e) =>
+            {
+                if (e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop))
+                    e.Effect = DragDropEffects.Copy;
+            };
+
+            lvPrograms.DragDrop += (s, e) =>
+            {
+                if (e.Data == null || !e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+                if (e.Data.GetData(DataFormats.FileDrop) is string[] paths && paths.Length > 0)
+                {
+                    var exePath = paths.FirstOrDefault(p => Path.GetExtension(p).Equals(".exe", StringComparison.OrdinalIgnoreCase));
+                    if (exePath != null)
+                    {
+                        selectedProgramPath = exePath;
+                        var fi = new FileInfo(selectedProgramPath);
+                        var item = new ListViewItem(new[]
+                        {
+                            Path.GetFileName(selectedProgramPath),
+                            selectedProgramPath,
+                            $"{fi.Length / 1024} KB",
+                            txbMachineCode.Text,
+                            "待加密"
+                        });
+                        item.Tag = 0;
+                        lvPrograms.Items.Clear();
+                        lvPrograms.Items.Add(item);
+                        
+                        // 提取并显示原程序图标
+                        try
+                        {
+                            originalIconPath = ExtractIconFromExe(selectedProgramPath);
+                            if (!string.IsNullOrEmpty(originalIconPath) && File.Exists(originalIconPath))
+                            {
+                                using (var icon = Image.FromFile(originalIconPath))
+                                {
+                                    picIconPreview.Image = new Bitmap(icon, 32, 32);
+                                }
+                                selectedIconPath = originalIconPath;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            // 暂时不记录日志，ctx还未声明
+                            System.Diagnostics.Debug.WriteLine($"提取图标失败: {ex.Message}");
+                        }
+                    }
+                }
+            };
+
+            // 自动生成密钥和lic的方法
+            Action generateKeyAndLic = () =>
+            {
+                try
+                {
+                    if (string.IsNullOrWhiteSpace(txbMachineCode.Text)) return;
+
+                    // 生成密钥
+                    string fileName = $"key_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString("N").Substring(0, 8)}.key";
+                    string keyPath = Path.Combine(keyDirectory, fileName);
+
+                    using (var rsa = RSA.Create(2048))
+                    {
+                        string privateKey = rsa.ToXmlString(true);
+                        string publicKey = rsa.ToXmlString(false);
+                        File.WriteAllText(keyPath, privateKey);
+                        File.WriteAllText(Path.Combine(keyDirectory, Path.GetFileNameWithoutExtension(fileName) + ".pub"), publicKey);
+                    }
+
+                    generatedKeyPath = keyPath;
+                    lblKeyStatus.Text = "✔️key已生成";
+                   // lblKeyStatus.ForeColor = Color.Green;
+
+                    // 自动生成lic
+                    if (!int.TryParse(txbDays.Text, out int licenseDays))
+                        licenseDays = 365;
+
+                    string licFileName = $"license_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString("N").Substring(0, 8)}.lic";
+                    string licPath = Path.Combine(licDirectory, licFileName);
+
+                    var licenseManager = LicenseManager.FromKeyDirectory(keyDirectory);
+                    var lic = licenseManager.CreateLicense(txbMachineCode.Text, licenseDays);
+                    licenseManager.SaveLicense(lic, licPath);
+
+                    generatedLicPath = licPath;
+                    lblLicStatus.Text = "✔️lic已生成";
+                   // lblLicStatus.ForeColor = Color.Green;
+                    // 更新列表中的机器码
+                    if (lvPrograms.Items.Count > 0)
+                    {
+                        lvPrograms.Items[0].SubItems[3].Text = txbMachineCode.Text;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"生成密钥/lic失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+
+            txbMachineCode.TextChanged += (_, __) =>
+            {
+                // 机器码输入后自动生成密钥和lic
+                if (!string.IsNullOrWhiteSpace(txbMachineCode.Text) && string.IsNullOrEmpty(generatedKeyPath))
+                {
+                    generateKeyAndLic();
+                }
+                else if (!string.IsNullOrWhiteSpace(txbMachineCode.Text) && !string.IsNullOrEmpty(generatedKeyPath))
+                {
+                    // 机器码改变，重新生成lic（使用相同的key文件）
+                    try
+                    {
+                        if (!int.TryParse(txbDays.Text, out int licenseDays))
+                            licenseDays = 365;
+
+                        string licFileName = $"license_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString("N").Substring(0, 8)}.lic";
+                        string licPath = Path.Combine(licDirectory, licFileName);
+
+                        // 使用与之前相同的key文件，而不是最新的key文件
+                        var licenseManager = new LicenseManager(generatedKeyPath, Path.Combine(keyDirectory, Path.GetFileNameWithoutExtension(generatedKeyPath) + ".pub"));
+                        var lic = licenseManager.CreateLicense(txbMachineCode.Text, licenseDays);
+                        licenseManager.SaveLicense(lic, licPath);
+
+                        generatedLicPath = licPath;
+                        //lblLicStatus.Text = "已生成";
+
+                        if (lvPrograms.Items.Count > 0)
+                        {
+                            lvPrograms.Items[0].SubItems[3].Text = txbMachineCode.Text;
+                        }
+                    }
+                    catch { }
+                }
+            };
+
+
+
+            btnClear.Click += (_, __) =>
+            {
+                lvPrograms.Items.Clear();
+                selectedProgramPath = "";
+                generatedKeyPath = "";
+                generatedLicPath = "";
+                selectedIconPath = "";
+                originalIconPath = "";
+                txbMachineCode.Text = "";
+                lblKeyStatus.Text = "❌未生成密钥"; 
+                lblLicStatus.Text = "❌未生成授权";
+                picIconPreview.Image = null;
+                cmbIconSource.SelectedIndex = 0;
+                btnImportIcon.Enabled = false;
+            };
+            
+            // 图标选择下拉框事件
+            cmbIconSource.SelectedIndexChanged += (_, __) =>
+            {
+                if (cmbIconSource.SelectedIndex == 0)
+                {
+                    // 使用原图标
+                    btnImportIcon.Enabled = false;
+                    if (!string.IsNullOrEmpty(originalIconPath) && File.Exists(originalIconPath))
+                    {
+                        try
+                        {
+                            using (var icon = Image.FromFile(originalIconPath))
+                            {
+                                picIconPreview.Image = new Bitmap(icon, 32, 32);
+                            }
+                            selectedIconPath = originalIconPath;
+                        }
+                        catch { }
+                    }
+                }
+                else
+                {
+                    // 导入图标
+                    btnImportIcon.Enabled = true;
+                    if (!string.IsNullOrEmpty(selectedIconPath) && selectedIconPath != originalIconPath)
+                    {
+                        try
+                        {
+                            using (var icon = Image.FromFile(selectedIconPath))
+                            {
+                                picIconPreview.Image = new Bitmap(icon, 32, 32);
+                            }
+                        }
+                        catch { }
+                    }
+                    else
+                    {
+                        picIconPreview.Image = null;
+                    }
+                }
+            };
+            
+            // 导入图标按钮事件
+            btnImportIcon.Click += (_, __) =>
+            {
+                using var dlg = new OpenFileDialog
+                {
+                    Title = "选择图标文件",
+                    Filter = "图标文件 (*.ico)|*.ico|所有图片 (*.png;*.jpg;*.bmp)|*.png;*.jpg;*.bmp"
+                };
+                if (dlg.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        selectedIconPath = dlg.FileName;
+                        using (var icon = Image.FromFile(selectedIconPath))
+                        {
+                            picIconPreview.Image = new Bitmap(icon, 32, 32);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"加载图标失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+            };
+
+            // 底部状态
+            var bottomStatus = new Panel { Dock = DockStyle.Fill };
+            var lblStatus = new Label { Text = "就绪", Dock = DockStyle.Left, AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, Width = 300 };
+            bottomStatus.Controls.Add(lblStatus);
+
+            root.Controls.Add(toolbarRow1, 0, 0);
+            root.Controls.Add(toolbarRow2, 0, 1);
+            root.Controls.Add(lvPrograms, 0, 2);
+            root.Controls.Add(bottomStatus, 0, 3);
+
+            tab.Controls.Add(root);
+
+            var logBox = new RichTextBox
+            {
+                Multiline = true,
+                ReadOnly = true,
+                ScrollBars = RichTextBoxScrollBars.Vertical,
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.None,
+                BackColor = SystemColors.Control
+            };
+
+            var ctx = new WorkspaceContext
+            {
+                Kind = "机器码",
+                SourcePath = null,
+                LogBox = logBox,
+                FileListView = lvPrograms,
+                CenterStatusLabel = lblStatus
+            };
+            tab.Tag = ctx;
+
+            // 捕获ctx变量用于lambda表达式
+            var capturedCtx = ctx;
+
+            // 加密按钮点击事件处理程序
+            btnEncrypt.Click += async (_, __) =>
+            {
+                if (string.IsNullOrEmpty(selectedProgramPath))
+                {
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 错误: 请先选择程序{Environment.NewLine}");
+                    return;
+                }
+                if (string.IsNullOrEmpty(generatedKeyPath))
+                {
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 错误: 请先生成密钥（输入机器码后自动生成）{Environment.NewLine}");
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(txbMachineCode.Text))
+                {
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 错误: 请输入机器码{Environment.NewLine}");
+                    return;
+                }
+                if (string.IsNullOrEmpty(generatedLicPath))
+                {
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 错误: 未生成lic文件{Environment.NewLine}");
+                    return;
+                }
+
+                // 备份原文件
+                string backupPath = selectedProgramPath + ".bak";
+                try
+                {
+                    if (File.Exists(backupPath)) File.Delete(backupPath);
+                    File.Copy(selectedProgramPath, backupPath);
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已备份原程序到: {backupPath}{Environment.NewLine}");
+                }
+                catch (Exception ex)
+                {
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 错误: 备份失败: {ex.Message}{Environment.NewLine}");
+                    return;
+                }
+
+                // 执行加密
+                if (lvPrograms.Items.Count > 0)
+                {
+                    lvPrograms.Items[0].Tag = 50; // 加密中
+                    lvPrograms.Invalidate();
+                }
+
+                capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 开始加密程序...{Environment.NewLine}");
+
+                try
+                {
+                    // 创建加密后的程序（包装器）
+                    await CreateProtectedExecutable(selectedProgramPath, txbMachineCode.Text, generatedLicPath, generatedKeyPath, selectedIconPath, capturedCtx);
+
+                    if (lvPrograms.Items.Count > 0)
+                    {
+                        lvPrograms.Items[0].Tag = 100; // 已加密
+                        lvPrograms.Items[0].SubItems[4].Text = "已加密";
+                        lvPrograms.Invalidate();
+                    }
+
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 加密完成!{Environment.NewLine}");
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 原程序已备份为: {backupPath}{Environment.NewLine}");
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 新程序启动时将校验机器码和lic文件{Environment.NewLine}");
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 加密后的程序特性：{Environment.NewLine}");
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] • 启动时自动校验机器码{Environment.NewLine}");
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] • 支持导入lic授权文件{Environment.NewLine}");
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] • 验证授权签名和有效期{Environment.NewLine}");
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] • 验证通过后启动原程序{Environment.NewLine}");
+                }
+                catch (Exception ex)
+                {
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 错误: 加密失败: {ex.Message}{Environment.NewLine}");
+                    if (lvPrograms.Items.Count > 0)
+                    {
+                        lvPrograms.Items[0].Tag = 0;
+                        lvPrograms.Invalidate();
+                    }
+                }
+            };
+
+            _tabWorkspaces.TabPages.Add(tab);
+            _tabWorkspaces.SelectedTab = tab;
+            _logHost.Controls.Clear();
+            _logHost.Controls.Add(logBox);
+            _statusLeft.Text = "已创建新工作区：机器码加密";
+        }
+
+        private void GenerateLic(string machineCode, string daysText, string keyDirectory, string licDirectory, ref string generatedLicPath)
+        {
+            try
+            {
+                if (!int.TryParse(daysText, out int licenseDays))
+                    licenseDays = 365;
+
+                string fileName = $"license_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString("N").Substring(0, 8)}.lic";
+                string licPath = Path.Combine(licDirectory, fileName);
+
+                var licenseManager = LicenseManager.FromKeyDirectory(keyDirectory);
+                var lic = licenseManager.CreateLicense(machineCode, licenseDays);
+                licenseManager.SaveLicense(lic, licPath);
+
+                generatedLicPath = licPath;
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 创建受保护的程序（包装器）
+        /// </summary>
+        private async Task CreateProtectedExecutable(string originalExePath, string machineCode, string licPath, string keyPath, string iconPath, WorkspaceContext ctx)
+        {
+            await Task.Run(() =>
+            {
+                // 读取原程序内容
+                byte[] originalExeBytes = File.ReadAllBytes(originalExePath);
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已读取原程序: {originalExePath} (大小: {originalExeBytes.Length} 字节){Environment.NewLine}");
+
+                // 读取lic文件内容
+                byte[] licBytes = File.ReadAllBytes(licPath);
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已读取lic文件: {licPath} (大小: {licBytes.Length} 字节){Environment.NewLine}");
+
+                // 读取公钥
+                string publicKeyPath = Path.Combine(Path.GetDirectoryName(keyPath)!, Path.GetFileNameWithoutExtension(keyPath) + ".pub");
+                byte[] publicKeyBytes = File.ReadAllBytes(publicKeyPath);
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已读取公钥文件: {publicKeyPath} (大小: {publicKeyBytes.Length} 字节){Environment.NewLine}");
+
+                // 创建包装器程序代码
+                string wrapperCode = GenerateWrapperCode(machineCode, licBytes, publicKeyBytes, originalExeBytes);
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已生成包装器代码 (大小: {wrapperCode.Length} 字符){Environment.NewLine}");
+
+                // 保存包装器代码到临时文件
+                string tempDir = Path.Combine(Path.GetTempPath(), $"EncryptTools_{Guid.NewGuid():N}");
+                Directory.CreateDirectory(tempDir);
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已创建临时目录: {tempDir}{Environment.NewLine}");
+
+                string wrapperCsPath = Path.Combine(tempDir, "Program.cs");
+                File.WriteAllText(wrapperCsPath, wrapperCode);
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已保存包装器代码到: {wrapperCsPath}{Environment.NewLine}");
+
+                // 创建项目文件 - 使用.NET 4.6，依赖原程序目录中的DLL
+                string projContent = "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+                    "  <PropertyGroup>\n" +
+                    "    <OutputType>WinExe</OutputType>\n" +
+                    "    <TargetFramework>net48</TargetFramework>\n" +
+                    "    <UseWindowsForms>true</UseWindowsForms>\n" +
+                    "    <RuntimeIdentifier>win-x64</RuntimeIdentifier>\n";
+                
+                // 如果有图标，添加到项目文件
+                if (!string.IsNullOrEmpty(iconPath) && File.Exists(iconPath))
+                {
+                    // 复制图标到临时目录
+                    string iconFileName = "app.ico";
+                    string tempIconPath = Path.Combine(tempDir, iconFileName);
+                    File.Copy(iconPath, tempIconPath, true);
+                    projContent += "    <ApplicationIcon>" + iconFileName + "</ApplicationIcon>\n";
+                    ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已添加程序图标{Environment.NewLine}");
+                }
+                
+                projContent += "  </PropertyGroup>\n" +
+                    "  <ItemGroup>\n" +
+                    "    <Reference Include=\"System.Management\" />\n" +
+                    "  </ItemGroup>\n" +
+                    "</Project>";
+                File.WriteAllText(Path.Combine(tempDir, "Wrapper.csproj"), projContent);
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已创建项目文件{Environment.NewLine}");
+
+                // 编译包装器程序
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "dotnet",
+                    Arguments = $"build \"{tempDir}\" -c Release -o \"{tempDir}\\publish\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 开始编译包装器程序...{Environment.NewLine}");
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 执行命令: {psi.FileName} {psi.Arguments}{Environment.NewLine}");
+
+                using var process = System.Diagnostics.Process.Start(psi);
+                if (process == null)
+                    throw new Exception("无法启动编译进程");
+
+                process.WaitForExit();
+
+                if (process.ExitCode != 0)
+                {
+                    string error = process.StandardError.ReadToEnd();
+                    string output = process.StandardOutput.ReadToEnd();
+                    ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 编译错误输出: {error}{Environment.NewLine}");
+                    ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 编译标准输出: {output}{Environment.NewLine}");
+                    throw new Exception($"编译失败 (退出代码: {process.ExitCode}): {error}");
+                }
+
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 编译成功{Environment.NewLine}");
+
+                // 复制编译后的程序到原程序位置
+                string compiledExe = Path.Combine(tempDir, "publish", "Wrapper.exe");
+                if (!File.Exists(compiledExe))
+                    throw new Exception($"编译后的程序不存在: {compiledExe}");
+
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已找到编译后的程序: {compiledExe}{Environment.NewLine}");
+
+                // 替换原程序
+                File.Copy(compiledExe, originalExePath, true);
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已替换原程序: {originalExePath}{Environment.NewLine}");
+
+                // 清理临时文件
+                try { Directory.Delete(tempDir, true); } catch { }
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已清理临时文件{Environment.NewLine}");
+            });
+        }
+
+        /// <summary>
+        /// 生成包装器程序代码
+        /// </summary>
+        private string GenerateWrapperCode(string expectedMachineCode, byte[] licBytes, byte[] publicKeyBytes, byte[] originalExeBytes)
+        {
+            string licBase64 = Convert.ToBase64String(licBytes);
+            string publicKeyBase64 = Convert.ToBase64String(publicKeyBytes);
+            string originalExeBase64 = Convert.ToBase64String(originalExeBytes);
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("using System;");
+            sb.AppendLine("using System.IO;");
+            sb.AppendLine("using System.Security.Cryptography;");
+            sb.AppendLine("using System.Text;");
+            sb.AppendLine("using System.Windows.Forms;");
+            sb.AppendLine("");
+            sb.AppendLine("namespace Wrapper");
+            sb.AppendLine("{");
+            sb.AppendLine("    public class Program");
+            sb.AppendLine("    {");
+            sb.AppendLine($"        private static readonly string ExpectedMachineCode = \"{expectedMachineCode}\";");
+            sb.AppendLine($"        private static readonly string EmbeddedLic = \"{licBase64}\";");
+            sb.AppendLine($"        private static readonly string EmbeddedPublicKey = \"{publicKeyBase64}\";");
+            sb.AppendLine($"        private static readonly string EmbeddedOriginalExe = \"{originalExeBase64}\";");
+            sb.AppendLine("        private static string _logFilePath = null;");
+            sb.AppendLine("");
+            sb.AppendLine("        private static void InitLog()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                string appDir = Path.GetDirectoryName(Application.ExecutablePath);");
+            sb.AppendLine("                string logDir = Path.Combine(appDir, \"log\");");
+            sb.AppendLine("                if (!Directory.Exists(logDir))");
+            sb.AppendLine("                    Directory.CreateDirectory(logDir);");
+            sb.AppendLine("                string timestamp = DateTime.Now.ToString(\"yyyyMMdd_HHmmss\");");
+            sb.AppendLine("                _logFilePath = Path.Combine(logDir, $\"wrapper_{timestamp}.log\");");
+            sb.AppendLine("                File.WriteAllText(_logFilePath, $\"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 日志初始化\\r\\n\");");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch (Exception ex)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                _logFilePath = null;");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static void Log(string message)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                if (_logFilePath != null)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    string line = $\"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}\\r\\n\";");
+            sb.AppendLine("                    File.AppendAllText(_logFilePath, line);");
+            sb.AppendLine("                }");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch { }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        [STAThread]");
+            sb.AppendLine("        public static void Main()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            Application.EnableVisualStyles();");
+            sb.AppendLine("            Application.SetCompatibleTextRenderingDefault(false);");
+            sb.AppendLine("");
+            sb.AppendLine("            InitLog();");
+            sb.AppendLine("            Log(\"程序启动\");");
+            sb.AppendLine("");
+            sb.AppendLine("            // 验证机器码");
+            sb.AppendLine("            string currentMachineCode = GetMachineCode();");
+            sb.AppendLine("            Log($\"当前机器码: {currentMachineCode}\");");
+            sb.AppendLine("            Log($\"期望机器码: {ExpectedMachineCode}\");");
+            sb.AppendLine("            if (currentMachineCode != ExpectedMachineCode)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Log(\"机器码不匹配，退出\");");
+            sb.AppendLine("                MessageBox.Show($\"机器码不匹配，无法运行此程序!\\n\\n当前机器码: {currentMachineCode}\\n授权机器码: {ExpectedMachineCode}\\n\\n请使用正确的授权文件或联系管理员。\", \"机器码验证失败\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("                return;");
+            sb.AppendLine("            }");
+            sb.AppendLine("            Log(\"机器码验证通过\");");
+            sb.AppendLine("");
+            sb.AppendLine("            // 验证lic文件");
+            sb.AppendLine("            Log(\"开始验证lic文件\");");
+            sb.AppendLine("            if (!ValidateLicense())");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Log(\"内置lic验证失败，显示导入窗口\");");
+            sb.AppendLine("                // 显示校验lic窗体");
+            sb.AppendLine("                using (var licenseForm = new LicenseForm(EmbeddedPublicKey))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    if (licenseForm.ShowDialog() != DialogResult.OK)");
+            sb.AppendLine("                    {");
+            sb.AppendLine("                        Log(\"用户取消lic导入，退出\");");
+            sb.AppendLine("                        return;");
+            sb.AppendLine("                    }");
+            sb.AppendLine("                }");
+            sb.AppendLine("                Log(\"lic导入验证通过\");");
+            sb.AppendLine("            }");
+            sb.AppendLine("            else");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Log(\"内置lic验证通过\");");
+            sb.AppendLine("            }");
+            sb.AppendLine("");
+            sb.AppendLine("            // 启动原程序");
+            sb.AppendLine("            Log(\"开始启动原程序\");");
+            sb.AppendLine("            var process = LaunchOriginalProgram();");
+            sb.AppendLine("            ");
+            sb.AppendLine("            // 如果进程成功启动，等待它退出");
+            sb.AppendLine("            if (process != null && !process.HasExited)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Log(\"等待原程序退出...\");");
+            sb.AppendLine("                // 隐藏当前窗口");
+            sb.AppendLine("                try { (Application.OpenForms[0])?.Hide(); } catch { }");
+            sb.AppendLine("                // 等待进程退出");
+            sb.AppendLine("                process.WaitForExit();");
+            sb.AppendLine("                Log(\"原程序已退出，退出当前程序\");");
+            sb.AppendLine("            }");
+            sb.AppendLine("            else");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Log(\"进程启动失败或已退出\");");
+            sb.AppendLine("            }");
+            sb.AppendLine("            ");
+            sb.AppendLine("            Application.Exit();");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static string GetMachineCode()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            // 使用MachineCodeTool的机器码生成逻辑");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                string cpu = GetWmi(\"Win32_Processor\", \"ProcessorId\");");
+            sb.AppendLine("                string board = GetWmi(\"Win32_BaseBoard\", \"SerialNumber\");");
+            sb.AppendLine("                string disk = GetWmi(\"Win32_LogicalDisk\", \"VolumeSerialNumber\", \"DeviceID='C:'\");");
+            sb.AppendLine("");
+            sb.AppendLine("                string raw = $\"{cpu}|{board}|{disk}\";");
+            sb.AppendLine("                return Sha256(raw);");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch");
+            sb.AppendLine("            {");
+            sb.AppendLine("                // 如果无法获取硬件信息，使用环境变量");
+            sb.AppendLine("                var fallback = Environment.MachineName + Environment.UserName;");
+            sb.AppendLine("                using (var sha = SHA256.Create())");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(fallback));");
+            sb.AppendLine("                    return BitConverter.ToString(hash).Replace(\"-\", \"\");");
+            sb.AppendLine("                }");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        static string GetWmi(string cls, string prop, string where = null)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                var q = where == null");
+            sb.AppendLine("                    ? $\"SELECT {prop} FROM {cls}\"");
+            sb.AppendLine("                    : $\"SELECT {prop} FROM {cls} WHERE {where}\";");
+            sb.AppendLine("                using (var searcher = new System.Management.ManagementObjectSearcher(q))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    foreach (System.Management.ManagementObject mo in searcher.Get())");
+            sb.AppendLine("                        return mo[prop]?.ToString()?.Trim();");
+            sb.AppendLine("                }");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch { }");
+            sb.AppendLine("            return \"\";");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        static string Sha256(string s)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            using (var sha = SHA256.Create())");
+            sb.AppendLine("            {");
+            sb.AppendLine("                var b = sha.ComputeHash(Encoding.UTF8.GetBytes(s ?? \"\"));");
+            sb.AppendLine("                return BitConverter.ToString(b).Replace(\"-\", \"\");");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static bool ValidateLicense()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Log(\"ValidateLicense 开始\");");
+            sb.AppendLine("                string appDir = Path.GetDirectoryName(Application.ExecutablePath);");
+            sb.AppendLine("                string configDir = Path.Combine(appDir, \"config\");");
+            sb.AppendLine("                Directory.CreateDirectory(configDir);");
+            sb.AppendLine("                string licPath = Path.Combine(configDir, \"license.lic\");");
+            sb.AppendLine("                Log($\"lic文件路径: {licPath}\");");
+            sb.AppendLine("");
+            sb.AppendLine("                if (!File.Exists(licPath))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    Log(\"lic文件不存在\");");
+            sb.AppendLine("                    return false;");
+            sb.AppendLine("                }");
+            sb.AppendLine("");
+            sb.AppendLine("                var licJson = File.ReadAllText(licPath);");
+            sb.AppendLine("                Log($\"lic文件内容长度: {licJson.Length}\");");
+            sb.AppendLine("                var lic = ParseLicense(licJson);");
+            sb.AppendLine("");
+            sb.AppendLine("                if (lic == null)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    Log(\"解析lic文件失败\");");
+            sb.AppendLine("                    return false;");
+            sb.AppendLine("                }");
+            sb.AppendLine("                Log($\"lic机器码: {lic.MachineCode}\");");
+            sb.AppendLine("");
+            sb.AppendLine("                if (lic.MachineCode != ExpectedMachineCode)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    Log(\"lic机器码不匹配\");");
+            sb.AppendLine("                    return false;");
+            sb.AppendLine("                }");
+            sb.AppendLine("");
+            sb.AppendLine("                if (lic.ExpirationDate < DateTime.Now)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    Log($\"lic已过期: {lic.ExpirationDate}\");");
+            sb.AppendLine("                    return false;");
+            sb.AppendLine("                }");
+            sb.AppendLine("                Log($\"lic有效期至: {lic.ExpirationDate}\");");
+            sb.AppendLine("");
+            sb.AppendLine("                bool sigValid = Program.VerifyLicenseSignature(lic, EmbeddedPublicKey);");
+            sb.AppendLine("                Log($\"签名验证结果: {sigValid}\");");
+            sb.AppendLine("                return sigValid;");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch (Exception ex)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Log($\"ValidateLicense异常: {ex.Message}\");");
+            sb.AppendLine("                return false;");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        static LicenseInfo ParseLicense(string json)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                var lic = new LicenseInfo();");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 解析 JSON 格式的 lic 文件，同时支持 PascalCase 和 camelCase");
+            sb.AppendLine("                lic.MachineCode = ExtractJsonValue(json, \"MachineCode\") ?? ExtractJsonValue(json, \"machineCode\");");
+            sb.AppendLine("                lic.LicenseKey = ExtractJsonValue(json, \"LicenseKey\") ?? ExtractJsonValue(json, \"licenseKey\");");
+            sb.AppendLine("                lic.Signature = ExtractJsonValue(json, \"Signature\") ?? ExtractJsonValue(json, \"signature\");");
+            sb.AppendLine("                ");
+            sb.AppendLine("                var expDateStr = ExtractJsonValue(json, \"ExpirationDate\") ?? ExtractJsonValue(json, \"expirationDate\");");
+            sb.AppendLine("                if (!string.IsNullOrEmpty(expDateStr))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    lic.ExpirationDate = DateTime.Parse(expDateStr);");
+            sb.AppendLine("                }");
+            sb.AppendLine("                ");
+            sb.AppendLine("                var issueDateStr = ExtractJsonValue(json, \"IssueDate\") ?? ExtractJsonValue(json, \"issueDate\");");
+            sb.AppendLine("                if (!string.IsNullOrEmpty(issueDateStr))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    lic.IssueDate = DateTime.Parse(issueDateStr);");
+            sb.AppendLine("                }");
+            sb.AppendLine("                ");
+            sb.AppendLine("                return lic;");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch");
+            sb.AppendLine("            {");
+            sb.AppendLine("                return null;");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("        ");
+            sb.AppendLine("        static string ExtractJsonValue(string json, string key)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                // 使用 Split 方法解析 JSON");
+            sb.AppendLine("                // 查找 key 的位置");
+            sb.AppendLine("                string searchKey = key;");
+            sb.AppendLine("                int keyPos = json.IndexOf(searchKey);");
+            sb.AppendLine("                if (keyPos < 0) return null;");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 从 key 后面开始查找");
+            sb.AppendLine("                string afterKey = json.Substring(keyPos + searchKey.Length);");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 查找冒号");
+            sb.AppendLine("                int colonPos = afterKey.IndexOf(':');");
+            sb.AppendLine("                if (colonPos < 0) return null;");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 获取冒号后面的内容");
+            sb.AppendLine("                string afterColon = afterKey.Substring(colonPos + 1).Trim();");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 查找第一个双引号");
+            sb.AppendLine("                int quote1 = afterColon.IndexOf((char)34);");
+            sb.AppendLine("                if (quote1 < 0) return null;");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 查找第二个双引号");
+            sb.AppendLine("                int quote2 = afterColon.IndexOf((char)34, quote1 + 1);");
+            sb.AppendLine("                if (quote2 < 0) return null;");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 提取值");
+            sb.AppendLine("                return afterColon.Substring(quote1 + 1, quote2 - quote1 - 1);");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch { }");
+            sb.AppendLine("            return null;");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static bool VerifyLicenseSignature(LicenseInfo lic, string publicKeyBase64)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                var publicKeyBytes = Convert.FromBase64String(publicKeyBase64);");
+            sb.AppendLine("                var publicKeyXml = Encoding.UTF8.GetString(publicKeyBytes);");
+            sb.AppendLine("");
+            sb.AppendLine("                using (var rsa = RSA.Create())");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    rsa.FromXmlString(publicKeyXml);");
+            sb.AppendLine("");
+            sb.AppendLine("                    var data = lic.MachineCode + \"|\" + lic.ExpirationDate.ToString(\"O\") + \"|\" + lic.LicenseKey;");
+            sb.AppendLine("                    var dataBytes = Encoding.UTF8.GetBytes(data);");
+            sb.AppendLine("                    var signature = Convert.FromBase64String(lic.Signature);");
+            sb.AppendLine("");
+            sb.AppendLine("                    return rsa.VerifyData(dataBytes, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);");
+            sb.AppendLine("                }");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch");
+            sb.AppendLine("            {");
+            sb.AppendLine("                return false;");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static System.Diagnostics.Process LaunchOriginalProgram()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Log(\"LaunchOriginalProgram 开始（安全模式）\");");
+            sb.AppendLine("                var exeBytes = Convert.FromBase64String(EmbeddedOriginalExe);");
+            sb.AppendLine("                Log($\"EXE字节数: {exeBytes.Length}\");");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 获取原程序所在目录");
+            sb.AppendLine("                string appDir = Path.GetDirectoryName(Application.ExecutablePath);");
+            sb.AppendLine("                Log($\"程序目录: {appDir}\");");
+            sb.AppendLine("                if (string.IsNullOrEmpty(appDir))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    Log(\"错误: 无法获取程序目录\");");
+            sb.AppendLine("                    MessageBox.Show(\"无法获取程序目录\", \"错误\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("                    return null;");
+            sb.AppendLine("                }");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 在原程序目录创建临时文件（使用原程序名称，避免依赖问题）");
+            sb.AppendLine("                string originalExeName = Path.GetFileName(Application.ExecutablePath);");
+            sb.AppendLine("                string tempPath = Path.Combine(appDir, \"_temp_\" + Guid.NewGuid().ToString(\"N\").Substring(0, 8) + \"_\" + originalExeName);");
+            sb.AppendLine("                Log($\"写入临时EXE: {tempPath}\");");
+            sb.AppendLine("                File.WriteAllBytes(tempPath, exeBytes);");
+            sb.AppendLine("                try { File.SetAttributes(tempPath, FileAttributes.Hidden); } catch { }");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 验证EXE文件是否写入成功");
+            sb.AppendLine("                if (!File.Exists(tempPath))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    Log(\"错误: 临时文件创建失败\");");
+            sb.AppendLine("                    MessageBox.Show(\"临时文件创建失败\", \"错误\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("                    return null;");
+            sb.AppendLine("                }");
+            sb.AppendLine("                Log(\"临时文件创建成功\");");
+            sb.AppendLine("");
+            sb.AppendLine("                // 添加防调试检测");
+            sb.AppendLine("                if (System.Diagnostics.Debugger.IsAttached)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    Log(\"检测到调试器，拒绝启动\");");
+            sb.AppendLine("                    MessageBox.Show(\"检测到调试器，程序拒绝启动\", \"安全警告\", MessageBoxButtons.OK, MessageBoxIcon.Warning);");
+            sb.AppendLine("                    try { File.Delete(tempPath); } catch { }");
+            sb.AppendLine("                    return null;");
+            sb.AppendLine("                }");
+            sb.AppendLine("");
+            sb.AppendLine("                // 检测常见调试器进程");
+            sb.AppendLine("                string[] debuggerProcesses = { \"dnspy\", \"x64dbg\", \"ollydbg\", \"ida\", \"windbg\", \"devenv\" };");
+            sb.AppendLine("                foreach (var proc in System.Diagnostics.Process.GetProcesses())");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    string procName = proc.ProcessName.ToLower();");
+            sb.AppendLine("                    bool isDebugger = false;");
+            sb.AppendLine("                    foreach (var d in debuggerProcesses)");
+            sb.AppendLine("                    {");
+            sb.AppendLine("                        if (procName.Contains(d))");
+            sb.AppendLine("                        {");
+            sb.AppendLine("                            isDebugger = true;");
+            sb.AppendLine("                            break;");
+            sb.AppendLine("                        }");
+            sb.AppendLine("                    }");
+            sb.AppendLine("                    if (isDebugger)");
+            sb.AppendLine("                    {");
+            sb.AppendLine("                        Log($\"检测到调试器进程: {proc.ProcessName}\");");
+            sb.AppendLine("                        MessageBox.Show($\"检测到调试器进程: {proc.ProcessName}\\n程序拒绝启动\", \"安全警告\", MessageBoxButtons.OK, MessageBoxIcon.Warning);");
+            sb.AppendLine("                        try { File.Delete(tempPath); } catch { }");
+            sb.AppendLine("                        return null;");
+            sb.AppendLine("                    }");
+            sb.AppendLine("                }");
+            sb.AppendLine("");
+            sb.AppendLine("                var psi = new System.Diagnostics.ProcessStartInfo");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    FileName = tempPath,");
+            sb.AppendLine("                    UseShellExecute = true,");
+            sb.AppendLine("                    WorkingDirectory = appDir  // 使用原程序目录");
+            sb.AppendLine("                };");
+            sb.AppendLine("                Log($\"启动进程: {tempPath}\");");
+            sb.AppendLine("");
+            sb.AppendLine("                var process = System.Diagnostics.Process.Start(psi);");
+            sb.AppendLine("");
+            sb.AppendLine("                if (process == null)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    Log(\"错误: Process.Start 返回 null\");");
+            sb.AppendLine("                    MessageBox.Show(\"启动程序失败：无法创建进程\", \"错误\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("                    return null;");
+            sb.AppendLine("                }");
+            sb.AppendLine("                Log($\"进程已启动，ID: {process.Id}\");");
+            sb.AppendLine("");
+            sb.AppendLine("                // 等待一下检查进程是否真的在运行");
+            sb.AppendLine("                System.Threading.Thread.Sleep(500);");
+            sb.AppendLine("                try");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    process.Refresh();");
+            sb.AppendLine("                    Log($\"进程状态: {process.Responding}, 已退出: {process.HasExited}\");");
+            sb.AppendLine("                    if (process.HasExited)");
+            sb.AppendLine("                    {");
+            sb.AppendLine("                        Log($\"进程已退出，退出码: {process.ExitCode}\");");
+            sb.AppendLine("                        MessageBox.Show($\"程序启动后立即退出，退出码: {process.ExitCode}\\n请检查程序依赖或配置。\", \"启动失败\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("                        return null;");
+            sb.AppendLine("                    }");
+            sb.AppendLine("                }");
+            sb.AppendLine("                catch (Exception checkEx)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    Log($\"检查进程状态时出错: {checkEx.Message}\");");
+            sb.AppendLine("                }");
+            sb.AppendLine("");
+            sb.AppendLine("                // 等待进程退出后立即清理临时文件");
+            sb.AppendLine("                process.EnableRaisingEvents = true;");
+            sb.AppendLine("                process.Exited += (s, e) =>");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    Log(\"原程序已退出，立即清理临时文件\");");
+            sb.AppendLine("                    try { File.Delete(tempPath); } catch (Exception delEx) { Log($\"清理临时文件失败: {delEx.Message}\"); }");
+            sb.AppendLine("                };");
+            sb.AppendLine("                Log(\"LaunchOriginalProgram 完成，返回进程对象\");");
+            sb.AppendLine("                return process;");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch (Exception ex)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Log($\"启动程序异常: {ex.Message}\\n{ex.StackTrace}\");");
+            sb.AppendLine("                MessageBox.Show(\"启动程序失败: \" + ex.Message + \"\\n\" + ex.StackTrace, \"错误\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("                return null;");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("    }");
+            sb.AppendLine("");
+            sb.AppendLine("    public class LicenseInfo");
+            sb.AppendLine("    {");
+            sb.AppendLine("        public string MachineCode { get; set; }");
+            sb.AppendLine("        public DateTime ExpirationDate { get; set; }");
+            sb.AppendLine("        public DateTime IssueDate { get; set; }");
+            sb.AppendLine("        public string LicenseKey { get; set; }");
+            sb.AppendLine("        public string Signature { get; set; }");
+            sb.AppendLine("    }");
+            sb.AppendLine("");
+            sb.AppendLine("    public class LicenseForm : Form");
+            sb.AppendLine("    {");
+            sb.AppendLine("        private TextBox txtLicenseFile;");
+            sb.AppendLine("        private Button btnBrowse;");
+            sb.AppendLine("        private Button btnOK;");
+            sb.AppendLine("        private Button btnCancel;");
+            sb.AppendLine("        private Label lblStatus;");
+            sb.AppendLine("        private string _publicKeyBase64;");
+            sb.AppendLine("");
+            sb.AppendLine("        public LicenseForm(string publicKeyBase64)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            _publicKeyBase64 = publicKeyBase64;");
+            sb.AppendLine("            InitializeComponent();");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private void InitializeComponent()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            this.Text = \"授权文件校验\";");
+            sb.AppendLine("            this.Size = new System.Drawing.Size(500, 200);");
+            sb.AppendLine("            this.StartPosition = FormStartPosition.CenterScreen;");
+            sb.AppendLine("            this.FormBorderStyle = FormBorderStyle.FixedDialog;");
+            sb.AppendLine("            this.MaximizeBox = false;");
+            sb.AppendLine("            this.MinimizeBox = false;");
+            sb.AppendLine("");
+            sb.AppendLine("            // 授权文件路径文本框");
+            sb.AppendLine("            txtLicenseFile = new TextBox();");
+            sb.AppendLine("            txtLicenseFile.Location = new System.Drawing.Point(20, 30);");
+            sb.AppendLine("            txtLicenseFile.Size = new System.Drawing.Size(300, 23);");
+            sb.AppendLine("            txtLicenseFile.ReadOnly = true;");
+            sb.AppendLine("            this.Controls.Add(txtLicenseFile);");
+            sb.AppendLine("");
+            sb.AppendLine("            // 浏览按钮");
+            sb.AppendLine("            btnBrowse = new Button();");
+            sb.AppendLine("            btnBrowse.Text = \"浏览...\";");
+            sb.AppendLine("            btnBrowse.Location = new System.Drawing.Point(330, 30);");
+            sb.AppendLine("            btnBrowse.Size = new System.Drawing.Size(75, 23);");
+            sb.AppendLine("            btnBrowse.Click += BtnBrowse_Click;");
+            sb.AppendLine("            this.Controls.Add(btnBrowse);");
+            sb.AppendLine("");
+            sb.AppendLine("            // 状态标签");
+            sb.AppendLine("            lblStatus = new Label();");
+            sb.AppendLine("            lblStatus.Location = new System.Drawing.Point(20, 70);");
+            sb.AppendLine("            lblStatus.Size = new System.Drawing.Size(450, 20);");
+            sb.AppendLine("            lblStatus.Text = \"请选择授权文件(.lic)\";");
+            sb.AppendLine("            this.Controls.Add(lblStatus);");
+            sb.AppendLine("");
+            sb.AppendLine("            // 确定按钮");
+            sb.AppendLine("            btnOK = new Button();");
+            sb.AppendLine("            btnOK.Text = \"确定\";");
+            sb.AppendLine("            btnOK.Location = new System.Drawing.Point(300, 120);");
+            sb.AppendLine("            btnOK.Size = new System.Drawing.Size(75, 23);");
+            sb.AppendLine("            btnOK.Click += BtnOK_Click;");
+            sb.AppendLine("            this.Controls.Add(btnOK);");
+            sb.AppendLine("");
+            sb.AppendLine("            // 取消按钮");
+            sb.AppendLine("            btnCancel = new Button();");
+            sb.AppendLine("            btnCancel.Text = \"取消\";");
+            sb.AppendLine("            btnCancel.Location = new System.Drawing.Point(400, 120);");
+            sb.AppendLine("            btnCancel.Size = new System.Drawing.Size(75, 23);");
+            sb.AppendLine("            btnCancel.Click += (s, e) => { this.DialogResult = DialogResult.Cancel; this.Close(); };");
+            sb.AppendLine("            this.Controls.Add(btnCancel);");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private void BtnBrowse_Click(object sender, EventArgs e)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            using (var dlg = new OpenFileDialog())");
+            sb.AppendLine("            {");
+            sb.AppendLine("                dlg.Title = \"选择授权文件\";");
+            sb.AppendLine("                dlg.Filter = \"授权文件 (*.lic)|*.lic\";");
+            sb.AppendLine("                ");
+            sb.AppendLine("                if (dlg.ShowDialog() == DialogResult.OK)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    txtLicenseFile.Text = dlg.FileName;");
+            sb.AppendLine("                    lblStatus.Text = \"已选择授权文件，点击确定进行校验\";");
+            sb.AppendLine("                }");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private void BtnOK_Click(object sender, EventArgs e)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            if (string.IsNullOrEmpty(txtLicenseFile.Text))");
+            sb.AppendLine("            {");
+            sb.AppendLine("                MessageBox.Show(\"请先选择授权文件\", \"提示\", MessageBoxButtons.OK, MessageBoxIcon.Warning);");
+            sb.AppendLine("                return;");
+            sb.AppendLine("            }");
+            sb.AppendLine("");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                var licJson = File.ReadAllText(txtLicenseFile.Text);");
+            sb.AppendLine("                var lic = ParseLicense(licJson);");
+            sb.AppendLine("");
+            sb.AppendLine("                if (lic == null)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    MessageBox.Show(\"授权文件格式错误\", \"错误\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("                    return;");
+            sb.AppendLine("                }");
+            sb.AppendLine("");
+            sb.AppendLine("                // 验证机器码");
+            sb.AppendLine("                string currentMachineCode = GetMachineCode();");
+            sb.AppendLine("                if (string.IsNullOrEmpty(lic.MachineCode))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    MessageBox.Show(\"无法从lic文件中读取机器码，请检查lic文件格式是否正确。\", \"lic文件错误\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("                    return;");
+            sb.AppendLine("                }");
+            sb.AppendLine("                if (lic.MachineCode != currentMachineCode)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    MessageBox.Show($\"lic文件与当前机器码不一致!\\\\n\\\\n当前机器码: {currentMachineCode}\\\\n授权机器码: {lic.MachineCode}\\\\n\\\\n请使用与此机器码匹配的lic文件。\", \"lic文件不匹配\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("                    return;");
+            sb.AppendLine("                }");
+            sb.AppendLine("");
+            sb.AppendLine("                // 验证过期时间");
+            sb.AppendLine("                if (lic.ExpirationDate < DateTime.Now)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    MessageBox.Show($\"授权已过期!\\\\n过期时间: {lic.ExpirationDate}\", \"错误\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("                    return;");
+            sb.AppendLine("                }");
+            sb.AppendLine("");
+            sb.AppendLine("                // 验证签名");
+            sb.AppendLine("                if (!VerifyLicenseSignature(lic))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    MessageBox.Show(\"授权文件签名验证失败!\", \"错误\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("                    return;");
+            sb.AppendLine("                }");
+            sb.AppendLine("");
+            sb.AppendLine("                // 保存到config目录");
+            sb.AppendLine("                string appDir = Path.GetDirectoryName(Application.ExecutablePath);");
+            sb.AppendLine("                string configDir = Path.Combine(appDir, \"config\");");
+            sb.AppendLine("                Directory.CreateDirectory(configDir);");
+            sb.AppendLine("                string licPath = Path.Combine(configDir, \"license.lic\");");
+            sb.AppendLine("                File.WriteAllText(licPath, licJson);");
+            sb.AppendLine("");
+            sb.AppendLine("                MessageBox.Show(\"授权文件校验成功并已保存\", \"成功\", MessageBoxButtons.OK, MessageBoxIcon.Information);");
+            sb.AppendLine("                this.DialogResult = DialogResult.OK;");
+            sb.AppendLine("                this.Close();");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch (Exception ex)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                MessageBox.Show($\"导入授权文件失败: {ex.Message}\", \"错误\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private string GetMachineCode()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            // 使用MachineCodeTool的机器码生成逻辑");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                string cpu = GetWmi(\"Win32_Processor\", \"ProcessorId\");");
+            sb.AppendLine("                string board = GetWmi(\"Win32_BaseBoard\", \"SerialNumber\");");
+            sb.AppendLine("                string disk = GetWmi(\"Win32_LogicalDisk\", \"VolumeSerialNumber\", \"DeviceID='C:'\");");
+            sb.AppendLine("");
+            sb.AppendLine("                string raw = $\"{cpu}|{board}|{disk}\";");
+            sb.AppendLine("                return Sha256(raw);");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch");
+            sb.AppendLine("            {");
+            sb.AppendLine("                var fallback = Environment.MachineName + Environment.UserName;");
+            sb.AppendLine("                using (var sha = SHA256.Create())");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(fallback));");
+            sb.AppendLine("                    return BitConverter.ToString(hash).Replace(\"-\", \"\");");
+            sb.AppendLine("                }");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        static string GetWmi(string cls, string prop, string where = null)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                var q = where == null");
+            sb.AppendLine("                    ? $\"SELECT {prop} FROM {cls}\"");
+            sb.AppendLine("                    : $\"SELECT {prop} FROM {cls} WHERE {where}\";");
+            sb.AppendLine("                using (var searcher = new System.Management.ManagementObjectSearcher(q))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    foreach (System.Management.ManagementObject mo in searcher.Get())");
+            sb.AppendLine("                        return mo[prop]?.ToString()?.Trim();");
+            sb.AppendLine("                }");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch { }");
+            sb.AppendLine("            return \"\";");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        static string Sha256(string s)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            using (var sha = SHA256.Create())");
+            sb.AppendLine("            {");
+            sb.AppendLine("                var b = sha.ComputeHash(Encoding.UTF8.GetBytes(s ?? \"\"));");
+            sb.AppendLine("                return BitConverter.ToString(b).Replace(\"-\", \"\");");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        static LicenseInfo ParseLicense(string json)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                // 首先尝试解析 JSON 格式");
+            sb.AppendLine("                if (json.Trim().StartsWith(\"{\") || json.Trim().StartsWith(\"[\"))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    return ParseLicenseJson(json);");
+            sb.AppendLine("                }");
+            sb.AppendLine("                // 否则解析行格式");
+            sb.AppendLine("                var lines = json.Split('\\n');");
+            sb.AppendLine("                var lic = new LicenseInfo();");
+            sb.AppendLine("                foreach (var line in lines)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    if (line.StartsWith(\"MachineCode:\"))");
+            sb.AppendLine("                        lic.MachineCode = line.Substring(12).Trim();");
+            sb.AppendLine("                    else if (line.StartsWith(\"ExpirationDate:\"))");
+            sb.AppendLine("                        lic.ExpirationDate = DateTime.Parse(line.Substring(15).Trim());");
+            sb.AppendLine("                    else if (line.StartsWith(\"LicenseKey:\"))");
+            sb.AppendLine("                        lic.LicenseKey = line.Substring(11).Trim();");
+            sb.AppendLine("                    else if (line.StartsWith(\"Signature:\"))");
+            sb.AppendLine("                        lic.Signature = line.Substring(10).Trim();");
+            sb.AppendLine("                }");
+            sb.AppendLine("                return lic;");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch");
+            sb.AppendLine("            {");
+            sb.AppendLine("                return null;");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("        ");
+            sb.AppendLine("        static LicenseInfo ParseLicenseJson(string json)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                var lic = new LicenseInfo();");
+            sb.AppendLine("                // 同时支持 PascalCase 和 camelCase");
+            sb.AppendLine("                lic.MachineCode = ExtractJsonValue(json, \"MachineCode\") ?? ExtractJsonValue(json, \"machineCode\");");
+            sb.AppendLine("                lic.LicenseKey = ExtractJsonValue(json, \"LicenseKey\") ?? ExtractJsonValue(json, \"licenseKey\");");
+            sb.AppendLine("                lic.Signature = ExtractJsonValue(json, \"Signature\") ?? ExtractJsonValue(json, \"signature\");");
+            sb.AppendLine("                ");
+            sb.AppendLine("                var expDateStr = ExtractJsonValue(json, \"ExpirationDate\") ?? ExtractJsonValue(json, \"expirationDate\");");
+            sb.AppendLine("                if (!string.IsNullOrEmpty(expDateStr))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    lic.ExpirationDate = DateTime.Parse(expDateStr);");
+            sb.AppendLine("                }");
+            sb.AppendLine("                ");
+            sb.AppendLine("                var issueDateStr = ExtractJsonValue(json, \"IssueDate\") ?? ExtractJsonValue(json, \"issueDate\");");
+            sb.AppendLine("                if (!string.IsNullOrEmpty(issueDateStr))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    lic.IssueDate = DateTime.Parse(issueDateStr);");
+            sb.AppendLine("                }");
+            sb.AppendLine("                ");
+            sb.AppendLine("                return lic;");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch");
+            sb.AppendLine("            {");
+            sb.AppendLine("                return null;");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("        ");
+            sb.AppendLine("        static string ExtractJsonValue(string json, string key)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                // 查找 key 的位置");
+            sb.AppendLine("                string searchKey = key;");
+            sb.AppendLine("                int keyPos = json.IndexOf(searchKey);");
+            sb.AppendLine("                if (keyPos < 0) return null;");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 从 key 后面开始查找");
+            sb.AppendLine("                string afterKey = json.Substring(keyPos + searchKey.Length);");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 查找冒号");
+            sb.AppendLine("                int colonPos = afterKey.IndexOf(':');");
+            sb.AppendLine("                if (colonPos < 0) return null;");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 获取冒号后面的内容");
+            sb.AppendLine("                string afterColon = afterKey.Substring(colonPos + 1).Trim();");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 查找第一个双引号");
+            sb.AppendLine("                int quote1 = afterColon.IndexOf((char)34);");
+            sb.AppendLine("                if (quote1 < 0) return null;");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 查找第二个双引号");
+            sb.AppendLine("                int quote2 = afterColon.IndexOf((char)34, quote1 + 1);");
+            sb.AppendLine("                if (quote2 < 0) return null;");
+            sb.AppendLine("                ");
+            sb.AppendLine("                // 提取值并解码JSON转义字符");
+            sb.AppendLine("                string value = afterColon.Substring(quote1 + 1, quote2 - quote1 - 1);");
+            sb.AppendLine("                return DecodeJsonString(value);");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch { }");
+            sb.AppendLine("            return null;");
+            sb.AppendLine("        }");
+            sb.AppendLine("        ");
+            sb.AppendLine("        static string DecodeJsonString(string value)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            if (string.IsNullOrEmpty(value)) return value;");
+            sb.AppendLine("            ");
+            sb.AppendLine("            // 解码常见的JSON转义字符");
+            sb.AppendLine("            value = value.Replace(\"\\\\\\\"\", \"\\\"\");");
+            sb.AppendLine("            value = value.Replace(\"\\\\\\\\\", \"\\\\\");");
+            sb.AppendLine("            value = value.Replace(\"\\\\/\", \"/\");");
+            sb.AppendLine("            value = value.Replace(\"\\\\b\", \"\\b\");");
+            sb.AppendLine("            value = value.Replace(\"\\\\f\", \"\\f\");");
+            sb.AppendLine("            value = value.Replace(\"\\\\n\", \"\\n\");");
+            sb.AppendLine("            value = value.Replace(\"\\\\r\", \"\\r\");");
+            sb.AppendLine("            value = value.Replace(\"\\\\t\", \"\\t\");");
+            sb.AppendLine("            ");
+            sb.AppendLine("            // 解码Unicode转义序列(如 \\u002B -> +)");
+            sb.AppendLine("            var sb = new System.Text.StringBuilder();");
+            sb.AppendLine("            for (int i = 0; i < value.Length; i++)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                if (i < value.Length - 5 && value[i] == '\\\\' && value[i + 1] == 'u')");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    string hex = value.Substring(i + 2, 4);");
+            sb.AppendLine("                    if (int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out int code))");
+            sb.AppendLine("                    {");
+            sb.AppendLine("                        sb.Append((char)code);");
+            sb.AppendLine("                        i += 5;");
+            sb.AppendLine("                        continue;");
+            sb.AppendLine("                    }");
+            sb.AppendLine("                }");
+            sb.AppendLine("                sb.Append(value[i]);");
+            sb.AppendLine("            }");
+            sb.AppendLine("            ");
+            sb.AppendLine("            return sb.ToString();");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private bool VerifyLicenseSignature(LicenseInfo lic)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                var publicKeyBytes = Convert.FromBase64String(_publicKeyBase64);");
+            sb.AppendLine("                var publicKeyXml = Encoding.UTF8.GetString(publicKeyBytes);");
+            sb.AppendLine("");
+            sb.AppendLine("                using (var rsa = RSA.Create())");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    rsa.FromXmlString(publicKeyXml);");
+            sb.AppendLine("");
+            sb.AppendLine("                    var data = lic.MachineCode + \"|\" + lic.ExpirationDate.ToString(\"O\") + \"|\" + lic.LicenseKey;");
+            sb.AppendLine("                    var dataBytes = Encoding.UTF8.GetBytes(data);");
+            sb.AppendLine("                    var signature = Convert.FromBase64String(lic.Signature);");
+            sb.AppendLine("");
+            sb.AppendLine("                    return rsa.VerifyData(dataBytes, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);");
+            sb.AppendLine("                }");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch (Exception ex)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                MessageBox.Show(\"签名验证异常: \" + ex.Message, \"调试信息\", MessageBoxButtons.OK, MessageBoxIcon.Information);");
+            sb.AppendLine("                return false;");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("    }");
+            sb.AppendLine("}");
+
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 从EXE文件中提取图标
+        /// </summary>
+        private string ExtractIconFromExe(string exePath)
+        {
+            try
+            {
+                // 使用Icon.ExtractAssociatedIcon提取图标
+                using (var icon = Icon.ExtractAssociatedIcon(exePath))
+                {
+                    if (icon != null)
+                    {
+                        // 保存到临时目录
+                        string tempDir = Path.Combine(Path.GetTempPath(), "EncryptTools_Icons");
+                        Directory.CreateDirectory(tempDir);
+                        string iconPath = Path.Combine(tempDir, $"{Guid.NewGuid():N}.ico");
+                        
+                        using (var fs = new FileStream(iconPath, FileMode.Create))
+                        {
+                            icon.Save(fs);
+                        }
+                        
+                        return iconPath;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"提取图标失败: {ex.Message}");
+            }
+            return null;
         }
 
         private void ConfigureFileSplit(SplitContainer split)
@@ -2767,6 +4369,238 @@ namespace EncryptTools
                     break;
             }
         }
+    }
+
+    /// <summary>
+    /// 许可证管理器 - 用于生成和验证机器码授权
+    /// </summary>
+    public class LicenseManager
+    {
+        private string _privateKeyPath;
+        private string _publicKeyPath;
+
+        public LicenseManager()
+        {
+            _privateKeyPath = "";
+            _publicKeyPath = "";
+        }
+
+        public LicenseManager(string privateKeyPath, string publicKeyPath)
+        {
+            _privateKeyPath = privateKeyPath;
+            _publicKeyPath = publicKeyPath;
+        }
+
+        public static LicenseManager FromKeyDirectory(string keyDirectory)
+        {
+            var manager = new LicenseManager();
+            if (!string.IsNullOrEmpty(keyDirectory) && Directory.Exists(keyDirectory))
+            {
+                // 使用key目录下最新的key文件
+                var keyFiles = Directory.GetFiles(keyDirectory, "*.key");
+                if (keyFiles.Length > 0)
+                {
+                    // 按修改时间排序，取最新的
+                    manager._privateKeyPath = keyFiles.OrderByDescending(f => File.GetLastWriteTime(f)).First();
+                    manager._publicKeyPath = Path.Combine(keyDirectory, Path.GetFileNameWithoutExtension(manager._privateKeyPath) + ".pub");
+                }
+            }
+            return manager;
+        }
+
+        /// <summary>
+        /// 创建许可证
+        /// </summary>
+        public LicenseInfo CreateLicense(string machineCode, int validDays)
+        {
+            var license = new LicenseInfo
+            {
+                MachineCode = machineCode,
+                ExpirationDate = DateTime.Now.AddDays(validDays),
+                IssueDate = DateTime.Now,
+                LicenseKey = Guid.NewGuid().ToString("N")
+            };
+
+            // 签名
+            SignLicense(license);
+
+            return license;
+        }
+
+        /// <summary>
+        /// 验证许可证
+        /// </summary>
+        public bool ValidateLicense(LicenseInfo license, string machineCode)
+        {
+            if (license == null) return false;
+            if (license.MachineCode != machineCode) return false;
+            if (license.ExpirationDate < DateTime.Now) return false;
+
+            return VerifySignature(license);
+        }
+
+        /// <summary>
+        /// 保存许可证到文件（手动构建JSON，避免依赖System.Text.Json）
+        /// </summary>
+        public void SaveLicense(LicenseInfo license, string filePath)
+        {
+            var json = new System.Text.StringBuilder();
+            json.AppendLine("{");
+            json.AppendLine($"  \"MachineCode\": \"{EscapeJsonString(license.MachineCode)}\",");
+            json.AppendLine($"  \"ExpirationDate\": \"{license.ExpirationDate:O}\",");
+            json.AppendLine($"  \"IssueDate\": \"{license.IssueDate:O}\",");
+            json.AppendLine($"  \"LicenseKey\": \"{EscapeJsonString(license.LicenseKey)}\",");
+            json.AppendLine($"  \"Signature\": \"{EscapeJsonString(license.Signature)}\"");
+            json.AppendLine("}");
+            File.WriteAllText(filePath, json.ToString());
+        }
+
+        /// <summary>
+        /// 转义JSON字符串中的特殊字符
+        /// </summary>
+        private string EscapeJsonString(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return value;
+            var sb = new System.Text.StringBuilder();
+            foreach (char c in value)
+            {
+                switch (c)
+                {
+                    case '"': sb.Append("\\\""); break;
+                    case '\\': sb.Append("\\\\"); break;
+                    case '\b': sb.Append("\\b"); break;
+                    case '\f': sb.Append("\\f"); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    default:
+                        if (c < 0x20)
+                        {
+                            sb.Append($"\\u{(int)c:X4}");
+                        }
+                        else
+                        {
+                            sb.Append(c);
+                        }
+                        break;
+                }
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 从文件加载许可证（手动解析JSON，避免依赖System.Text.Json）
+        /// </summary>
+        public LicenseInfo LoadLicense(string filePath)
+        {
+            if (!File.Exists(filePath)) return null;
+            var json = File.ReadAllText(filePath);
+            return ParseLicenseJsonManual(json);
+        }
+
+        /// <summary>
+        /// 手动解析JSON格式的lic文件
+        /// </summary>
+        private LicenseInfo ParseLicenseJsonManual(string json)
+        {
+            try
+            {
+                var lic = new LicenseInfo();
+                lic.MachineCode = ExtractJsonValueManual(json, "MachineCode") ?? ExtractJsonValueManual(json, "machineCode");
+                lic.LicenseKey = ExtractJsonValueManual(json, "LicenseKey") ?? ExtractJsonValueManual(json, "licenseKey");
+                lic.Signature = ExtractJsonValueManual(json, "Signature") ?? ExtractJsonValueManual(json, "signature");
+
+                var expDateStr = ExtractJsonValueManual(json, "ExpirationDate") ?? ExtractJsonValueManual(json, "expirationDate");
+                if (!string.IsNullOrEmpty(expDateStr))
+                {
+                    lic.ExpirationDate = DateTime.Parse(expDateStr);
+                }
+
+                var issueDateStr = ExtractJsonValueManual(json, "IssueDate") ?? ExtractJsonValueManual(json, "issueDate");
+                if (!string.IsNullOrEmpty(issueDateStr))
+                {
+                    lic.IssueDate = DateTime.Parse(issueDateStr);
+                }
+
+                return lic;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 手动从JSON中提取字段值
+        /// </summary>
+        private string ExtractJsonValueManual(string json, string key)
+        {
+            try
+            {
+                string searchKey = "\"" + key + "\"";
+                int keyPos = json.IndexOf(searchKey);
+                if (keyPos < 0) return null;
+
+                string afterKey = json.Substring(keyPos + searchKey.Length);
+                int colonPos = afterKey.IndexOf(':');
+                if (colonPos < 0) return null;
+
+                string afterColon = afterKey.Substring(colonPos + 1).Trim();
+                int quote1 = afterColon.IndexOf('"');
+                if (quote1 < 0) return null;
+
+                int quote2 = afterColon.IndexOf('"', quote1 + 1);
+                if (quote2 < 0) return null;
+
+                return afterColon.Substring(quote1 + 1, quote2 - quote1 - 1);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private void SignLicense(LicenseInfo license)
+        {
+            if (!File.Exists(_privateKeyPath)) return;
+
+            var privateKeyXml = File.ReadAllText(_privateKeyPath);
+            using var rsa = RSA.Create();
+            rsa.FromXmlString(privateKeyXml);
+
+            var data = $"{license.MachineCode}|{license.ExpirationDate:O}|{license.LicenseKey}";
+            var dataBytes = System.Text.Encoding.UTF8.GetBytes(data);
+            var signature = rsa.SignData(dataBytes, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            license.Signature = Convert.ToBase64String(signature);
+        }
+
+        private bool VerifySignature(LicenseInfo license)
+        {
+            if (string.IsNullOrEmpty(license.Signature)) return false;
+            if (!File.Exists(_publicKeyPath)) return false;
+
+            var publicKeyXml = File.ReadAllText(_publicKeyPath);
+            using var rsa = RSA.Create();
+            rsa.FromXmlString(publicKeyXml);
+
+            var data = $"{license.MachineCode}|{license.ExpirationDate:O}|{license.LicenseKey}";
+            var dataBytes = System.Text.Encoding.UTF8.GetBytes(data);
+            var signature = Convert.FromBase64String(license.Signature);
+
+            return rsa.VerifyData(dataBytes, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        }
+    }
+
+    /// <summary>
+    /// 许可证信息
+    /// </summary>
+    public class LicenseInfo
+    {
+        public string MachineCode { get; set; } = "";
+        public DateTime ExpirationDate { get; set; }
+        public DateTime IssueDate { get; set; }
+        public string LicenseKey { get; set; } = "";
+        public string Signature { get; set; } = "";
     }
 }
 

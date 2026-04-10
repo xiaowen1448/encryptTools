@@ -6,7 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using EncryptTools.PasswordFile;
@@ -889,6 +888,103 @@ namespace EncryptTools.Ui
             public bool IconRandomize { get; set; }
             /// <summary>像素 XOR：1=旧版（整缓冲含 Alpha/行填充），2=仅 BGR（推荐，避免解密后磨砂感）。</summary>
             public int PixelXorVersion { get; set; } = 2;
+        }
+
+        // 手动 JSON 序列化/反序列化，避免依赖 System.Text.Json
+        private static string SerializeImageEffectOptions(ImageEffectOptions opt)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("{");
+            sb.AppendLine($"  \"Version\": {opt.Version},");
+            sb.AppendLine($"  \"Mode\": {(int)opt.Mode},");
+            sb.AppendLine($"  \"BlockSize\": {opt.BlockSize},");
+            sb.AppendLine($"  \"Iterations\": {opt.Iterations},");
+            sb.AppendLine($"  \"SaltBase64\": \"{EscapeJsonString(opt.SaltBase64 ?? "")}\",");
+            sb.AppendLine($"  \"PasswordFileName\": \"{EscapeJsonString(opt.PasswordFileName ?? "")}\",");
+            sb.AppendLine($"  \"PixelationEnabled\": {opt.PixelationEnabled.ToString().ToLowerInvariant()},");
+            sb.AppendLine($"  \"IconOverlayEnabled\": {opt.IconOverlayEnabled.ToString().ToLowerInvariant()},");
+            sb.AppendLine($"  \"OverlayOpacityPercent\": {opt.OverlayOpacityPercent},");
+            sb.AppendLine($"  \"IconOverlayBlockSizeHint\": {opt.IconOverlayBlockSizeHint},");
+            sb.AppendLine($"  \"IconOverlayBlocksEncryptedBase64\": \"{EscapeJsonString(opt.IconOverlayBlocksEncryptedBase64 ?? "")}\",");
+            sb.AppendLine($"  \"IconOverlayBlockSize\": {opt.IconOverlayBlockSize},");
+            sb.AppendLine($"  \"IconRandomize\": {opt.IconRandomize.ToString().ToLowerInvariant()},");
+            sb.AppendLine($"  \"PixelXorVersion\": {opt.PixelXorVersion}");
+            sb.AppendLine("}");
+            return sb.ToString();
+        }
+
+        private static ImageEffectOptions? DeserializeImageEffectOptions(string json)
+        {
+            try
+            {
+                var opt = new ImageEffectOptions();
+                opt.Version = int.Parse(ExtractJsonValue(json, "Version") ?? "1");
+                opt.Mode = (ImageMode)int.Parse(ExtractJsonValue(json, "Mode") ?? "0");
+                opt.BlockSize = int.Parse(ExtractJsonValue(json, "BlockSize") ?? "16");
+                opt.Iterations = int.Parse(ExtractJsonValue(json, "Iterations") ?? "200000");
+                opt.SaltBase64 = ExtractJsonValue(json, "SaltBase64") ?? "";
+                opt.PasswordFileName = ExtractJsonValue(json, "PasswordFileName");
+                opt.PixelationEnabled = bool.Parse(ExtractJsonValue(json, "PixelationEnabled") ?? "false");
+                opt.IconOverlayEnabled = bool.Parse(ExtractJsonValue(json, "IconOverlayEnabled") ?? "false");
+                opt.OverlayOpacityPercent = int.Parse(ExtractJsonValue(json, "OverlayOpacityPercent") ?? "80");
+                opt.IconOverlayBlockSizeHint = int.Parse(ExtractJsonValue(json, "IconOverlayBlockSizeHint") ?? "32");
+                opt.IconOverlayBlocksEncryptedBase64 = ExtractJsonValue(json, "IconOverlayBlocksEncryptedBase64");
+                opt.IconOverlayBlockSize = int.Parse(ExtractJsonValue(json, "IconOverlayBlockSize") ?? "0");
+                opt.IconRandomize = bool.Parse(ExtractJsonValue(json, "IconRandomize") ?? "false");
+                opt.PixelXorVersion = int.Parse(ExtractJsonValue(json, "PixelXorVersion") ?? "2");
+                return opt;
+            }
+            catch { return null; }
+        }
+
+        private static string EscapeJsonString(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return value;
+            return value
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"")
+                .Replace("\n", "\\n")
+                .Replace("\r", "\\r")
+                .Replace("\t", "\\t");
+        }
+
+        private static string? ExtractJsonValue(string json, string key)
+        {
+            // 简单提取 JSON 字符串值
+            var pattern = $"\"{key}\":";
+            var idx = json.IndexOf(pattern, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) return null;
+
+            var start = idx + pattern.Length;
+            // 跳过空白
+            while (start < json.Length && char.IsWhiteSpace(json[start])) start++;
+
+            if (start >= json.Length) return null;
+
+            // 处理字符串值
+            if (json[start] == '"')
+            {
+                start++;
+                var end = json.IndexOf('"', start);
+                // 处理转义引号
+                while (end > start && json[end - 1] == '\\')
+                {
+                    end = json.IndexOf('"', end + 1);
+                }
+                if (end < 0) return null;
+                var value = json.Substring(start, end - start);
+                // 解码转义字符
+                value = value.Replace("\\\"", "\"").Replace("\\\\", "\\").Replace("\\n", "\n").Replace("\\r", "\r").Replace("\\t", "\t");
+                return value;
+            }
+
+            // 处理数字或布尔值
+            var commaIdx = json.IndexOf(',', start);
+            var braceIdx = json.IndexOf('}', start);
+            var endIdx = commaIdx >= 0 && commaIdx < braceIdx ? commaIdx : braceIdx;
+            if (endIdx < 0) endIdx = json.Length;
+
+            return json.Substring(start, endIdx - start).Trim();
         }
 
         private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".jfif", ".jpe", ".bmp", ".gif" };
@@ -1863,7 +1959,7 @@ namespace EncryptTools.Ui
             var metaPath = GetMetaPathForImage(outPath);
             try
             {
-                var json = JsonSerializer.Serialize(state.Options!, new JsonSerializerOptions { WriteIndented = true });
+                var json = SerializeImageEffectOptions(state.Options!);
                 File.WriteAllText(metaPath, json, Encoding.UTF8);
                 _log($"[{DateTime.Now:HH:mm:ss}] 已保存加密图: {outPath}");
                 _log($"[{DateTime.Now:HH:mm:ss}] 已写入元数据: {metaPath}");
@@ -1882,7 +1978,7 @@ namespace EncryptTools.Ui
             {
                 if (!File.Exists(metaPath)) return null;
                 var json = File.ReadAllText(metaPath, Encoding.UTF8);
-                return JsonSerializer.Deserialize<ImageEffectOptions>(json);
+                return DeserializeImageEffectOptions(json);
             }
             catch { return null; }
         }
@@ -1940,7 +2036,7 @@ namespace EncryptTools.Ui
                         }
                         state.EncryptedImage.Save(outPath, ImageFormat.Png);
                         var metaPath = GetMetaPathForImage(outPath);
-                        var json = JsonSerializer.Serialize(state.Options, new JsonSerializerOptions { WriteIndented = true });
+                        var json = SerializeImageEffectOptions(state.Options);
                         File.WriteAllText(metaPath, json, Encoding.UTF8);
                         _log($"[{DateTime.Now:HH:mm:ss}] 已保存: {outPath}");
                         _log($"[{DateTime.Now:HH:mm:ss}] 已写入元数据: {metaPath}");

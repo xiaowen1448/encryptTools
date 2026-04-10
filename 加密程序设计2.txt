@@ -1,0 +1,207 @@
+一、最终结构（你要做成这样）
+YourApp.exe   （壳程序）
+ ├── 内嵌：payload.bin（加密后的核心程序）
+ ├── 内嵌：公钥
+ ├── LicenseManager
+ ├── AES解密器
+ └── 内存加载执行
+二、开发步骤（按顺序做）
+✅ 第一步：准备核心程序（payload）
+
+👉 你的原程序：
+
+CoreApp.exe
+
+👉 建议改成：
+
+CoreApp.dll（推荐）
+
+如果你不想改也可以用 exe（后面也支持）
+
+✅ 第二步：加密 payload（生成 payload.bin）
+
+👉 新建一个小工具（加密工具）
+
+🔧 加密代码（生成 payload.bin）
+using System.Security.Cryptography;
+
+byte[] raw = File.ReadAllBytes("CoreApp.dll");
+
+byte[] key = Encoding.UTF8.GetBytes("1234567890123456"); // 16位
+byte[] iv  = Encoding.UTF8.GetBytes("6543210987654321");
+
+byte[] encrypted;
+
+using (Aes aes = Aes.Create())
+{
+    aes.Key = key;
+    aes.IV = iv;
+
+    using var ms = new MemoryStream();
+    using var cs = new CryptoStream(ms, aes.CreateEncryptor(), CryptoStreamMode.Write);
+
+    cs.Write(raw, 0, raw.Length);
+    cs.Close();
+
+    encrypted = ms.ToArray();
+}
+
+File.WriteAllBytes("payload.bin", encrypted);
+
+👉 生成：
+
+payload.bin
+✅ 第三步：嵌入资源（重点）
+
+在你的主程序（YourApp）中：
+
+👉 添加资源：
+
+payload.bin → 作为 Embedded Resource
+
+假设名字：
+
+Properties.Resources.payload
+四、主程序实现（核心）
+✅ 1. AES解密函数
+byte[] Decrypt(byte[] encrypted)
+{
+    byte[] key = Encoding.UTF8.GetBytes("1234567890123456");
+    byte[] iv  = Encoding.UTF8.GetBytes("6543210987654321");
+
+    using var aes = Aes.Create();
+    aes.Key = key;
+    aes.IV = iv;
+
+    using var ms = new MemoryStream();
+    using var cs = new CryptoStream(ms, aes.CreateDecryptor(), CryptoStreamMode.Write);
+
+    cs.Write(encrypted, 0, encrypted.Length);
+    cs.Close();
+
+    return ms.ToArray();
+}
+✅ 2. License 校验（必须先执行）
+bool CheckLicense()
+{
+    string path = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "YourApp",
+        "license.dat"
+    );
+
+    if (!File.Exists(path)) return false;
+
+    var json = File.ReadAllText(path);
+    var lic = JsonSerializer.Deserialize<License>(json);
+
+    string raw = $"{lic.machine}|{lic.expire}|{lic.type}|salt";
+
+    if (!VerifySign(raw, lic.sign))
+        return false;
+
+    if (lic.machine != MachineCode.Get())
+        return false;
+
+    if (DateTime.Now > DateTime.Parse(lic.expire))
+        return false;
+
+    return true;
+}
+✅ 3. 内存加载执行（核心 ⭐）
+👉 如果是 DLL
+using System.Reflection;
+
+void RunPayload()
+{
+    byte[] encrypted = Properties.Resources.payload;
+
+    byte[] raw = Decrypt(encrypted);
+
+    Assembly asm = Assembly.Load(raw);
+
+    var type = asm.GetType("CoreApp.Program");
+    var method = type.GetMethod("Main");
+
+    method.Invoke(null, new object[] { new string[0] });
+
+    Array.Clear(raw, 0, raw.Length); // 清内存
+}
+👉 如果是 EXE
+Assembly asm = Assembly.Load(raw);
+asm.EntryPoint.Invoke(null, new object[] { new string[0] });
+✅ 4. 主程序入口
+[STAThread]
+static void Main()
+{
+    if (!CheckLicense())
+    {
+        MessageBox.Show("未授权");
+        return;
+    }
+
+    RunPayload();
+}
+五、导入 License（UI）
+void ImportLicense()
+{
+    OpenFileDialog dlg = new OpenFileDialog();
+    dlg.Filter = "License|*.lic";
+
+    if (dlg.ShowDialog() == DialogResult.OK)
+    {
+        string content = File.ReadAllText(dlg.FileName);
+
+        if (!Validate(content))
+        {
+            MessageBox.Show("无效授权");
+            return;
+        }
+
+        string path = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "YourApp",
+            "license.dat"
+        );
+
+        Directory.CreateDirectory(Path.GetDirectoryName(path));
+        File.WriteAllText(path, content);
+
+        MessageBox.Show("授权成功");
+    }
+}
+六、必须加的防护（建议你一起做）
+🔒 1. 防调试
+if (Debugger.IsAttached)
+    Environment.Exit(0);
+🔒 2. 检测调试器进程
+string[] bad = { "dnspy", "x64dbg", "ollydbg" };
+
+foreach (var p in Process.GetProcesses())
+{
+    if (bad.Any(x => p.ProcessName.ToLower().Contains(x)))
+        Environment.Exit(0);
+}
+🔒 3. 防复制（关键）
+
+👉 不让 payload 可用：
+
+没有 license → 无法解密 → 无法运行
+🔒 4. 混淆代码（强烈建议）
+
+工具：
+
+ConfuserEx
+.NET Reactor
+七、你现在的问题已经解决
+❌ 之前问题
+解压文件 → 泄露
+文件复制 → 可运行
+✅ 现在
+不落地 ✔
+内存运行 ✔
+license 控制 ✔
+无法直接复制 ✔
+八、一句话总结
+
+👉 你现在做的是“加壳 + 授权系统”的组合方案

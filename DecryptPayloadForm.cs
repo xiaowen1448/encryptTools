@@ -28,10 +28,9 @@ namespace EncryptTools
             Font = new Font("Microsoft YaHei UI", 9F);
             try { Icon = LoadAppIcon() ?? Icon; } catch { }
 
-            var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, Padding = new Padding(14) };
+            var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(14) };
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40)); // mode + value
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 95)); // mode + value + buttons (三行)
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
             var title = new Label
@@ -41,35 +40,63 @@ namespace EncryptTools
                 TextAlign = ContentAlignment.MiddleLeft
             };
 
-            var rowMode = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1 };
-            rowMode.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
-            rowMode.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
-            rowMode.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            rowMode.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
-            rowMode.Controls.Add(new Label { Text = "方式:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+            // 主布局容器：三行布局，解密按钮放在更下方
+            var mainPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 3 };
+            mainPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));    // 方式标签
+            mainPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));   // 下拉框
+            mainPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));    // 输入框
+            mainPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));   // 右侧按钮列
+            
+            mainPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));         // 第一行
+            mainPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));         // 第二行（空行）
+            mainPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));         // 第三行（解密按钮）
+            
+            // 第一行控件
+            mainPanel.Controls.Add(new Label { Text = "解密方式:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
             _cbMode = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
             _cbMode.Items.AddRange(new object[] { "密码", "密码文件" });
             _cbMode.SelectedIndex = 0;
-            rowMode.Controls.Add(_cbMode, 1, 0);
-            _txtValue = new TextBox { Dock = DockStyle.Left, Width = 100
+            mainPanel.Controls.Add(_cbMode, 1, 0);
+            _txtValue = new TextBox { Dock = DockStyle.Fill, 
 #if !NET46 && !NET48 && !NET461
-                , PlaceholderText = "输入密码"
+                PlaceholderText = "输入密码"
 #endif
             };
-            rowMode.Controls.Add(_txtValue, 2, 0);
+            mainPanel.Controls.Add(_txtValue, 2, 0);
             _btnBrowsePwd = new Button { Text = "选择密码文件", Dock = DockStyle.Fill, Visible = false };
-            rowMode.Controls.Add(_btnBrowsePwd, 3, 0);
+            mainPanel.Controls.Add(_btnBrowsePwd, 3, 0);
+            
+            // 第二行 - 空行（增加间距）
+            mainPanel.Controls.Add(new Label { Text = "", Dock = DockStyle.Fill }, 0, 1);
+            mainPanel.Controls.Add(new Label { Text = "", Dock = DockStyle.Fill }, 1, 1);
+            mainPanel.Controls.Add(new Label { Text = "", Dock = DockStyle.Fill }, 2, 1);
+            mainPanel.Controls.Add(new Label { Text = "", Dock = DockStyle.Fill }, 3, 1);
+            
+            // 第三行 - 解密按钮放在更下方
+            mainPanel.Controls.Add(new Label { Text = "", Dock = DockStyle.Fill }, 0, 2);
+            mainPanel.Controls.Add(new Label { Text = "", Dock = DockStyle.Fill }, 1, 2);
+            mainPanel.Controls.Add(new Label { Text = "", Dock = DockStyle.Fill }, 2, 2);
+            
+            _btnDecrypt = new Button { 
+                Text = "解密", 
+                Dock = DockStyle.Fill,
+                Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
+                BackColor = Color.LightBlue
+            };
+            mainPanel.Controls.Add(_btnDecrypt, 3, 2);
 
-            var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, WrapContents = false };
-            _btnDecrypt = new Button { Text = "解密并释放", AutoSize = true,  Padding = new Padding(10, 6, 10, 6) };
-            actions.Controls.Add(_btnDecrypt);
-
-            _lblStatus = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray, Text = "提示：若密码或 .pwd 错误，验证失败后本程序将自删除。" };
+            _lblStatus = new Label { 
+                Dock = DockStyle.Fill, 
+                TextAlign = ContentAlignment.MiddleLeft, 
+                ForeColor = Color.Red, 
+                Text = "提示：若密码或 .pwd 错误，验证失败后本程序将自删除。",
+                Height = 40,
+                Padding = new Padding(10, 5, 10, 0)
+            };
 
             root.Controls.Add(title, 0, 0);
-            root.Controls.Add(rowMode, 0, 1);
-            root.Controls.Add(actions, 0, 2);
-            root.Controls.Add(_lblStatus, 0, 3);
+            root.Controls.Add(mainPanel, 0, 1);
+            root.Controls.Add(_lblStatus, 0, 2);
             Controls.Add(root);
 
             _btnBrowsePwd.Click += (_, __) => BrowsePwd();
@@ -103,15 +130,16 @@ namespace EncryptTools
             bool hasValue = !string.IsNullOrWhiteSpace(_txtValue.Text);
             bool hasPwdFile = isPwdFile && hasValue && File.Exists(_txtValue.Text);
             bool hasPassword = !isPwdFile && hasValue;
-            if (!hasPassword && !hasPwdFile)
+            
+            if (hasPassword || hasPwdFile)
             {
-                _lblStatus.ForeColor = Color.Firebrick;
-                _lblStatus.Text = "请输出密码和导入密码文件。";
+                _lblStatus.ForeColor = Color.DarkGreen;
+                _lblStatus.Text = "已准备好解密，点击'解密'按钮开始";
             }
             else
             {
-                _lblStatus.ForeColor = Color.DimGray;
-                _lblStatus.Text = "提示：绑定 .pwd 的加密包请用「密码文件」；错误则本程序将自毁。";
+                _lblStatus.ForeColor = Color.Firebrick;
+                _lblStatus.Text = "请输入密码或选择密码文件，错误则本程序将自毁";
             }
         }
 
@@ -382,17 +410,43 @@ namespace EncryptTools
         {
             try
             {
+                // 禁用所有控件
+                SetControlsEnabled(false);
+                
                 _lblStatus.ForeColor = Color.Firebrick;
-                _lblStatus.Text = userMessage;
-                MessageBox.Show(this,
-                    userMessage + Environment.NewLine + Environment.NewLine + "验证失败：本程序将按策略删除自身（自毁）。",
-                    "解密失败",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                _lblStatus.Text = userMessage + " 3秒后程序将自毁";
+                
+                // 创建计时器，3秒后执行自毁
+                var timer = new System.Windows.Forms.Timer();
+                timer.Interval = 3000; // 3秒
+                timer.Tick += (sender, e) =>
+                {
+                    timer.Stop();
+                    timer.Dispose();
+                    ScheduleSelfDeleteAndExit(_exePath);
+                };
+                
+                // 启动计时器
+                timer.Start();
+            }
+            catch { 
+                // 如果出现异常，直接执行自毁
+                try { ScheduleSelfDeleteAndExit(_exePath); }
+                catch { try { Environment.Exit(1); } catch { } }
+            }
+        }
+        
+        /// <summary>设置所有控件的启用状态</summary>
+        private void SetControlsEnabled(bool enabled)
+        {
+            try
+            {
+                if (_cbMode != null) _cbMode.Enabled = enabled;
+                if (_txtValue != null) _txtValue.Enabled = enabled;
+                if (_btnBrowsePwd != null) _btnBrowsePwd.Enabled = enabled;
+                if (_btnDecrypt != null) _btnDecrypt.Enabled = enabled;
             }
             catch { }
-            try { ScheduleSelfDeleteAndExit(_exePath); }
-            catch { try { Environment.Exit(1); } catch { } }
         }
 
         private static void ScheduleSelfDeleteAndExit(string exePath)
