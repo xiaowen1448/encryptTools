@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -879,20 +880,19 @@ namespace EncryptTools
                 BackColor = SystemColors.Control
             };
 
-            // 复制文件工作区的布局结构
+            // 简化布局：只有一行工具栏 + 程序列表
             var root = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 4
+                RowCount = 3
             };
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));       // 第一行工具栏（导入程序+机器码）
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));       // 第二行工具栏（其他按钮）
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));       // 工具栏
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // 主区域（程序预览）
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));   // 底部状态条
 
-            // 第一行工具栏：导入程序 + 机器码
-            var toolbarRow1 = new FlowLayoutPanel
+            // 工具栏：选择程序 + 图标选择 + 加密按钮 + 清空按钮
+            var toolbar = new FlowLayoutPanel
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
@@ -907,36 +907,6 @@ namespace EncryptTools
             var btnSelectProgram = new Button { Text = "选择程序", AutoSize = true, Margin = new Padding(0, 0, 6, 2) };
             var lblDragHint = new Label { Text = "可拖拽EXE文件", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 6, 12, 0) };
             
-            // 机器码输入
-            var lblMachineCode = new Label { Text = "机器码:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
-            var txbMachineCode = new TextBox { Width = 400, Margin = new Padding(2, 2, 8, 2) };
-
-            toolbarRow1.Controls.Add(btnSelectProgram);
-            toolbarRow1.Controls.Add(lblDragHint);
-            toolbarRow1.Controls.Add(lblMachineCode);
-            toolbarRow1.Controls.Add(txbMachineCode);
-
-            // 第二行工具栏：授权天数 + 密钥状态 + 图标选择 + 加密按钮 + 清空按钮
-            var toolbarRow2 = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Top,
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                BackColor = SystemColors.ControlLight,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                AutoScroll = false,
-                Padding = new Padding(6, 4, 6, 4)
-            };
-            
-            // 授权天数
-            var lblDays = new Label { Text = "授权天数:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
-            var txbDays = new TextBox { Text = "365", Width = 60, Margin = new Padding(2, 2, 12, 2) };
-
-            // 密钥状态标签
-            var lblKeyStatus = new Label { Text = "❌未生成密钥", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(4, 6, 12, 0) };
-            var lblLicStatus = new Label { Text = "❌未生成授权", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(4, 6, 12, 0) };
-
             // 图标选择区域
             var lblIcon = new Label { Text = "程序图标:", AutoSize = true, Margin = new Padding(4, 6, 2, 0) };
             
@@ -985,18 +955,16 @@ namespace EncryptTools
 
             var btnClear = new Button { Text = "清空", AutoSize = true, Margin = new Padding(4, 0, 4, 4) };
 
-            toolbarRow2.Controls.Add(lblDays);
-            toolbarRow2.Controls.Add(txbDays);
-            toolbarRow2.Controls.Add(lblKeyStatus);
-            toolbarRow2.Controls.Add(lblLicStatus);
-            toolbarRow2.Controls.Add(lblIcon);
-            toolbarRow2.Controls.Add(picIconPreview);
-            toolbarRow2.Controls.Add(cmbIconSource);
-            toolbarRow2.Controls.Add(btnImportIcon);
-            toolbarRow2.Controls.Add(btnEncrypt);
-            toolbarRow2.Controls.Add(btnClear);
+            toolbar.Controls.Add(btnSelectProgram);
+            toolbar.Controls.Add(lblDragHint);
+            toolbar.Controls.Add(lblIcon);
+            toolbar.Controls.Add(picIconPreview);
+            toolbar.Controls.Add(cmbIconSource);
+            toolbar.Controls.Add(btnImportIcon);
+            toolbar.Controls.Add(btnEncrypt);
+            toolbar.Controls.Add(btnClear);
 
-            // 中部：程序预览列表（复制文件工作区的ListView）
+            // 中部：程序预览列表（简化版，去掉机器码列）
             var lvPrograms = new ListView
             {
                 Dock = DockStyle.Fill,
@@ -1008,7 +976,7 @@ namespace EncryptTools
             lvPrograms.DrawColumnHeader += (s, e) => e.DrawDefault = true;
             lvPrograms.DrawSubItem += (s, e) =>
             {
-                if (e.ColumnIndex != 4) { e.DrawDefault = true; return; }
+                if (e.ColumnIndex != 3) { e.DrawDefault = true; return; }
                 int raw = e.Item?.Tag is int v ? v : -1;
                 var r = e.Bounds;
                 if (r.Width <= 0 || r.Height <= 0) return;
@@ -1053,23 +1021,14 @@ namespace EncryptTools
                 e.Graphics.DrawString(text, e.Item?.ListView?.Font ?? SystemFonts.DefaultFont, SystemBrushes.ControlText, r, sf);
             };
             lvPrograms.Columns.Add("名称", 160);
-            lvPrograms.Columns.Add("路径", 280);
+            lvPrograms.Columns.Add("路径", 380);
             lvPrograms.Columns.Add("大小", 80);
-            lvPrograms.Columns.Add("机器码", 120);
             lvPrograms.Columns.Add("状态", 100);
 
             // 数据存储
             string selectedProgramPath = "";
-            string generatedKeyPath = "";
-            string generatedLicPath = "";
             string selectedIconPath = "";
             string originalIconPath = "";
-            
-            // 使用默认目录保存key和lic文件
-            string keyDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "key");
-            string licDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lic");
-            Directory.CreateDirectory(keyDirectory);
-            Directory.CreateDirectory(licDirectory);
 
             // 初始化状态显示
           //  lblKeyStatus.Text = "已准备";
@@ -1092,7 +1051,6 @@ namespace EncryptTools
                         Path.GetFileName(selectedProgramPath),
                         selectedProgramPath,
                         $"{fi.Length / 1024} KB",
-                        txbMachineCode.Text,
                         "待加密"
                     });
                     item.Tag = 0;
@@ -1141,7 +1099,6 @@ namespace EncryptTools
                             Path.GetFileName(selectedProgramPath),
                             selectedProgramPath,
                             $"{fi.Length / 1024} KB",
-                            txbMachineCode.Text,
                             "待加密"
                         });
                         item.Tag = 0;
@@ -1170,103 +1127,12 @@ namespace EncryptTools
                 }
             };
 
-            // 自动生成密钥和lic的方法
-            Action generateKeyAndLic = () =>
-            {
-                try
-                {
-                    if (string.IsNullOrWhiteSpace(txbMachineCode.Text)) return;
-
-                    // 生成密钥
-                    string fileName = $"key_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString("N").Substring(0, 8)}.key";
-                    string keyPath = Path.Combine(keyDirectory, fileName);
-
-                    using (var rsa = RSA.Create(2048))
-                    {
-                        string privateKey = rsa.ToXmlString(true);
-                        string publicKey = rsa.ToXmlString(false);
-                        File.WriteAllText(keyPath, privateKey);
-                        File.WriteAllText(Path.Combine(keyDirectory, Path.GetFileNameWithoutExtension(fileName) + ".pub"), publicKey);
-                    }
-
-                    generatedKeyPath = keyPath;
-                    lblKeyStatus.Text = "✔️key已生成";
-                   // lblKeyStatus.ForeColor = Color.Green;
-
-                    // 自动生成lic
-                    if (!int.TryParse(txbDays.Text, out int licenseDays))
-                        licenseDays = 365;
-
-                    string licFileName = $"license_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString("N").Substring(0, 8)}.lic";
-                    string licPath = Path.Combine(licDirectory, licFileName);
-
-                    var licenseManager = LicenseManager.FromKeyDirectory(keyDirectory);
-                    var lic = licenseManager.CreateLicense(txbMachineCode.Text, licenseDays);
-                    licenseManager.SaveLicense(lic, licPath);
-
-                    generatedLicPath = licPath;
-                    lblLicStatus.Text = "✔️lic已生成";
-                   // lblLicStatus.ForeColor = Color.Green;
-                    // 更新列表中的机器码
-                    if (lvPrograms.Items.Count > 0)
-                    {
-                        lvPrograms.Items[0].SubItems[3].Text = txbMachineCode.Text;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"生成密钥/lic失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-            };
-
-            txbMachineCode.TextChanged += (_, __) =>
-            {
-                // 机器码输入后自动生成密钥和lic
-                if (!string.IsNullOrWhiteSpace(txbMachineCode.Text) && string.IsNullOrEmpty(generatedKeyPath))
-                {
-                    generateKeyAndLic();
-                }
-                else if (!string.IsNullOrWhiteSpace(txbMachineCode.Text) && !string.IsNullOrEmpty(generatedKeyPath))
-                {
-                    // 机器码改变，重新生成lic（使用相同的key文件）
-                    try
-                    {
-                        if (!int.TryParse(txbDays.Text, out int licenseDays))
-                            licenseDays = 365;
-
-                        string licFileName = $"license_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString("N").Substring(0, 8)}.lic";
-                        string licPath = Path.Combine(licDirectory, licFileName);
-
-                        // 使用与之前相同的key文件，而不是最新的key文件
-                        var licenseManager = new LicenseManager(generatedKeyPath, Path.Combine(keyDirectory, Path.GetFileNameWithoutExtension(generatedKeyPath) + ".pub"));
-                        var lic = licenseManager.CreateLicense(txbMachineCode.Text, licenseDays);
-                        licenseManager.SaveLicense(lic, licPath);
-
-                        generatedLicPath = licPath;
-                        //lblLicStatus.Text = "已生成";
-
-                        if (lvPrograms.Items.Count > 0)
-                        {
-                            lvPrograms.Items[0].SubItems[3].Text = txbMachineCode.Text;
-                        }
-                    }
-                    catch { }
-                }
-            };
-
-
-
             btnClear.Click += (_, __) =>
             {
                 lvPrograms.Items.Clear();
                 selectedProgramPath = "";
-                generatedKeyPath = "";
-                generatedLicPath = "";
                 selectedIconPath = "";
                 originalIconPath = "";
-                txbMachineCode.Text = "";
-                lblKeyStatus.Text = "❌未生成密钥"; 
-                lblLicStatus.Text = "❌未生成授权";
                 picIconPreview.Image = null;
                 cmbIconSource.SelectedIndex = 0;
                 btnImportIcon.Enabled = false;
@@ -1344,10 +1210,9 @@ namespace EncryptTools
             var lblStatus = new Label { Text = "就绪", Dock = DockStyle.Left, AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, Width = 300 };
             bottomStatus.Controls.Add(lblStatus);
 
-            root.Controls.Add(toolbarRow1, 0, 0);
-            root.Controls.Add(toolbarRow2, 0, 1);
-            root.Controls.Add(lvPrograms, 0, 2);
-            root.Controls.Add(bottomStatus, 0, 3);
+            root.Controls.Add(toolbar, 0, 0);
+            root.Controls.Add(lvPrograms, 0, 1);
+            root.Controls.Add(bottomStatus, 0, 2);
 
             tab.Controls.Add(root);
 
@@ -1374,27 +1239,12 @@ namespace EncryptTools
             // 捕获ctx变量用于lambda表达式
             var capturedCtx = ctx;
 
-            // 加密按钮点击事件处理程序
+            // 加密按钮点击事件处理程序 - 简化版：直接加密，不依赖外部key/lic
             btnEncrypt.Click += async (_, __) =>
             {
                 if (string.IsNullOrEmpty(selectedProgramPath))
                 {
                     capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 错误: 请先选择程序{Environment.NewLine}");
-                    return;
-                }
-                if (string.IsNullOrEmpty(generatedKeyPath))
-                {
-                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 错误: 请先生成密钥（输入机器码后自动生成）{Environment.NewLine}");
-                    return;
-                }
-                if (string.IsNullOrWhiteSpace(txbMachineCode.Text))
-                {
-                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 错误: 请输入机器码{Environment.NewLine}");
-                    return;
-                }
-                if (string.IsNullOrEmpty(generatedLicPath))
-                {
-                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 错误: 未生成lic文件{Environment.NewLine}");
                     return;
                 }
 
@@ -1423,24 +1273,22 @@ namespace EncryptTools
 
                 try
                 {
-                    // 创建加密后的程序（包装器）
-                    await CreateProtectedExecutable(selectedProgramPath, txbMachineCode.Text, generatedLicPath, generatedKeyPath, selectedIconPath, capturedCtx);
+                    // 创建加密后的程序（包装器）- 使用内置的RSA密钥对
+                    await CreateProtectedExecutableSimple(selectedProgramPath, selectedIconPath, capturedCtx);
 
                     if (lvPrograms.Items.Count > 0)
                     {
                         lvPrograms.Items[0].Tag = 100; // 已加密
-                        lvPrograms.Items[0].SubItems[4].Text = "已加密";
+                        lvPrograms.Items[0].SubItems[3].Text = "已加密";
                         lvPrograms.Invalidate();
                     }
 
                     capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 加密完成!{Environment.NewLine}");
                     capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 原程序已备份为: {backupPath}{Environment.NewLine}");
-                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 新程序启动时将校验机器码和lic文件{Environment.NewLine}");
                     capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 加密后的程序特性：{Environment.NewLine}");
-                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] • 启动时自动校验机器码{Environment.NewLine}");
-                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] • 支持导入lic授权文件{Environment.NewLine}");
-                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] • 验证授权签名和有效期{Environment.NewLine}");
-                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] • 验证通过后启动原程序{Environment.NewLine}");
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] • 启动时自动读取机器码{Environment.NewLine}");
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] • 需要卡密激活才能运行{Environment.NewLine}");
+                    capturedCtx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] • 一机一码，防复制防泄密{Environment.NewLine}");
                 }
                 catch (Exception ex)
                 {
@@ -1477,6 +1325,115 @@ namespace EncryptTools
                 generatedLicPath = licPath;
             }
             catch { }
+        }
+
+        /// <summary>
+        /// 创建受保护的程序（简化版）- 内置RSA密钥对，运行时读取机器码，需要卡密激活
+        /// </summary>
+        private async Task CreateProtectedExecutableSimple(string originalExePath, string iconPath, WorkspaceContext ctx)
+        {
+            await Task.Run(() =>
+            {
+                // 读取原程序内容
+                byte[] originalExeBytes = File.ReadAllBytes(originalExePath);
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已读取原程序: {originalExePath} (大小: {originalExeBytes.Length} 字节){Environment.NewLine}");
+
+                // 生成内置的RSA密钥对
+                string publicKeyXml;
+                string privateKeyXml;
+                using (var rsa = RSA.Create(2048))
+                {
+                    publicKeyXml = rsa.ToXmlString(false);
+                    privateKeyXml = rsa.ToXmlString(true);
+                }
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已生成RSA密钥对{Environment.NewLine}");
+
+                // 创建包装器程序代码 - 包含防复制和防泄密功能
+                string wrapperCode = GenerateProtectedWrapperCode(publicKeyXml, privateKeyXml, originalExeBytes);
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已生成保护包装器代码 (大小: {wrapperCode.Length} 字符){Environment.NewLine}");
+
+                // 保存包装器代码到临时文件
+                string tempDir = Path.Combine(Path.GetTempPath(), $"EncryptTools_{Guid.NewGuid():N}");
+                Directory.CreateDirectory(tempDir);
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已创建临时目录: {tempDir}{Environment.NewLine}");
+
+                string wrapperCsPath = Path.Combine(tempDir, "Program.cs");
+                File.WriteAllText(wrapperCsPath, wrapperCode);
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已保存包装器代码到: {wrapperCsPath}{Environment.NewLine}");
+
+                // 创建项目文件
+                string projContent = "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+                    "  <PropertyGroup>\n" +
+                    "    <OutputType>WinExe</OutputType>\n" +
+                    "    <TargetFramework>net48</TargetFramework>\n" +
+                    "    <UseWindowsForms>true</UseWindowsForms>\n" +
+                    "    <RuntimeIdentifier>win-x64</RuntimeIdentifier>\n";
+
+                // 如果有图标，添加到项目文件
+                if (!string.IsNullOrEmpty(iconPath) && File.Exists(iconPath))
+                {
+                    string iconFileName = "app.ico";
+                    string tempIconPath = Path.Combine(tempDir, iconFileName);
+                    File.Copy(iconPath, tempIconPath, true);
+                    projContent += "    <ApplicationIcon>" + iconFileName + "</ApplicationIcon>\n";
+                    ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已添加程序图标{Environment.NewLine}");
+                }
+
+                projContent += "  </PropertyGroup>\n" +
+                    "  <ItemGroup>\n" +
+                    "    <Reference Include=\"System.Management\" />\n" +
+                    "    <Reference Include=\"System.Web.Extensions\" />\n" +
+                    "  </ItemGroup>\n" +
+                    "</Project>";
+                File.WriteAllText(Path.Combine(tempDir, "Wrapper.csproj"), projContent);
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已创建项目文件{Environment.NewLine}");
+
+                // 编译包装器程序
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "dotnet",
+                    Arguments = $"build \"{tempDir}\" -c Release -o \"{tempDir}\\publish\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 开始编译包装器程序...{Environment.NewLine}");
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 执行命令: {psi.FileName} {psi.Arguments}{Environment.NewLine}");
+
+                using var process = System.Diagnostics.Process.Start(psi);
+                if (process == null)
+                    throw new Exception("无法启动编译进程");
+
+                process.WaitForExit();
+
+                if (process.ExitCode != 0)
+                {
+                    string error = process.StandardError.ReadToEnd();
+                    string output = process.StandardOutput.ReadToEnd();
+                    ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 编译错误输出: {error}{Environment.NewLine}");
+                    ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 编译标准输出: {output}{Environment.NewLine}");
+                    throw new Exception($"编译失败 (退出代码: {process.ExitCode}): {error}");
+                }
+
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 编译成功{Environment.NewLine}");
+
+                // 复制编译后的程序到原程序位置
+                string compiledExe = Path.Combine(tempDir, "publish", "Wrapper.exe");
+                if (!File.Exists(compiledExe))
+                    throw new Exception($"编译后的程序不存在: {compiledExe}");
+
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已找到编译后的程序: {compiledExe}{Environment.NewLine}");
+
+                // 替换原程序
+                File.Copy(compiledExe, originalExePath, true);
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已替换原程序: {originalExePath}{Environment.NewLine}");
+
+                // 清理临时文件
+                try { Directory.Delete(tempDir, true); } catch { }
+                ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已清理临时文件{Environment.NewLine}");
+            });
         }
 
         /// <summary>
@@ -1585,6 +1542,552 @@ namespace EncryptTools
                 try { Directory.Delete(tempDir, true); } catch { }
                 ctx.LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] 已清理临时文件{Environment.NewLine}");
             });
+        }
+
+        /// <summary>
+        /// 生成受保护的包装器程序代码 - 包含防复制和防泄密功能
+        /// 运行时读取机器码，需要卡密激活
+        /// </summary>
+        private string GenerateProtectedWrapperCode(string publicKeyXml, string privateKeyXml, byte[] originalExeBytes)
+        {
+            string publicKeyBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(publicKeyXml));
+            string privateKeyBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(privateKeyXml));
+            string originalExeBase64 = Convert.ToBase64String(originalExeBytes);
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("using System;");
+            sb.AppendLine("using System.IO;");
+            sb.AppendLine("using System.Linq;");
+            sb.AppendLine("using System.Management;");
+            sb.AppendLine("using System.Security.Cryptography;");
+            sb.AppendLine("using System.Text;");
+            sb.AppendLine("using System.Text.Json;");
+            sb.AppendLine("using System.Windows.Forms;");
+            sb.AppendLine("");
+            sb.AppendLine("namespace Wrapper");
+            sb.AppendLine("{");
+            sb.AppendLine("    public class Program");
+            sb.AppendLine("    {");
+            sb.AppendLine($"        private static readonly string EmbeddedPublicKey = \"{publicKeyBase64}\";");
+            sb.AppendLine($"        private static readonly string EmbeddedPrivateKey = \"{privateKeyBase64}\";");
+            sb.AppendLine($"        private static readonly string EmbeddedOriginalExe = \"{originalExeBase64}\";");
+            sb.AppendLine("        private static string _logFilePath = null;");
+            sb.AppendLine("        private static string _machineCode = null;");
+            sb.AppendLine("");
+            sb.AppendLine("        // 防复制：检测是否被复制到其他机器");
+            sb.AppendLine("        private static bool IsCopiedToAnotherMachine()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                string appDir = Path.GetDirectoryName(Application.ExecutablePath);");
+            sb.AppendLine("                string configDir = Path.Combine(appDir, \"config\");");
+            sb.AppendLine("                string machineFile = Path.Combine(configDir, \".sys\");");
+            sb.AppendLine("                string currentMachineCode = GetMachineCode();");
+            sb.AppendLine("");
+            sb.AppendLine("                if (!File.Exists(machineFile))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    // 首次运行，保存机器码");
+            sb.AppendLine("                    Directory.CreateDirectory(configDir);");
+            sb.AppendLine("                    File.WriteAllText(machineFile, EncryptString(currentMachineCode, currentMachineCode));");
+            sb.AppendLine("                    return false;");
+            sb.AppendLine("                }");
+            sb.AppendLine("");
+            sb.AppendLine("                // 读取保存的机器码并解密");
+            sb.AppendLine("                string savedEncrypted = File.ReadAllText(machineFile);");
+            sb.AppendLine("                string savedMachineCode = DecryptString(savedEncrypted, currentMachineCode);");
+            sb.AppendLine("");
+            sb.AppendLine("                // 比较机器码");
+            sb.AppendLine("                return !string.Equals(savedMachineCode, currentMachineCode, StringComparison.OrdinalIgnoreCase);");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch");
+            sb.AppendLine("            {");
+            sb.AppendLine("                return true; // 出错视为复制");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        // 防泄密：检测调试器和虚拟机");
+            sb.AppendLine("        private static bool IsBeingDebugged()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                // 检测调试器");
+            sb.AppendLine("                if (System.Diagnostics.Debugger.IsAttached)");
+            sb.AppendLine("                    return true;");
+            sb.AppendLine("");
+            sb.AppendLine("                // 检测常见虚拟机");
+            sb.AppendLine("                string[] vmIndicators = new[] { \"vmware\", \"virtualbox\", \"hyper-v\", \"xen\", \"qemu\" };");
+            sb.AppendLine("                string manufacturer = GetWmi(\"Win32_ComputerSystem\", \"Manufacturer\").ToLower();");
+            sb.AppendLine("                string model = GetWmi(\"Win32_ComputerSystem\", \"Model\").ToLower();");
+            sb.AppendLine("                foreach (var vm in vmIndicators)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    if (manufacturer.Contains(vm) || model.Contains(vm))");
+            sb.AppendLine("                        return true;");
+            sb.AppendLine("                }");
+            sb.AppendLine("");
+            sb.AppendLine("                return false;");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch");
+            sb.AppendLine("            {");
+            sb.AppendLine("                return false;");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static void InitLog()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                string appDir = Path.GetDirectoryName(Application.ExecutablePath);");
+            sb.AppendLine("                string logDir = Path.Combine(appDir, \"log\");");
+            sb.AppendLine("                if (!Directory.Exists(logDir))");
+            sb.AppendLine("                    Directory.CreateDirectory(logDir);");
+            sb.AppendLine("                string timestamp = DateTime.Now.ToString(\"yyyyMMdd_HHmmss\");");
+            sb.AppendLine("                _logFilePath = Path.Combine(logDir, $\"wrapper_{timestamp}.log\");");
+            sb.AppendLine("                File.WriteAllText(_logFilePath, $\"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 日志初始化\\r\\n\");");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch { _logFilePath = null; }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static void Log(string message)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                if (_logFilePath != null)");
+            sb.AppendLine("                    File.AppendAllText(_logFilePath, $\"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}\\r\\n\");");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch { }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        [STAThread]");
+            sb.AppendLine("        public static void Main()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            Application.EnableVisualStyles();");
+            sb.AppendLine("            Application.SetCompatibleTextRenderingDefault(false);");
+            sb.AppendLine("            InitLog();");
+            sb.AppendLine("            Log(\"程序启动\");");
+            sb.AppendLine("");
+            sb.AppendLine("            // 防泄密检测");
+            sb.AppendLine("            if (IsBeingDebugged())");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Log(\"检测到调试器或虚拟机，退出\");");
+            sb.AppendLine("                MessageBox.Show(\"程序无法在调试器或虚拟机中运行。\", \"安全检测\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("                return;");
+            sb.AppendLine("            }");
+            sb.AppendLine("");
+            sb.AppendLine("            // 防复制检测");
+            sb.AppendLine("            if (IsCopiedToAnotherMachine())");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Log(\"检测到程序被复制到其他机器\");");
+            sb.AppendLine("                MessageBox.Show(\"此程序已绑定到其他机器，无法在此设备上运行。\\n\\n请使用正确的授权。\", \"授权验证失败\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("                return;");
+            sb.AppendLine("            }");
+            sb.AppendLine("");
+            sb.AppendLine("            // 获取当前机器码");
+            sb.AppendLine("            _machineCode = GetMachineCode();");
+            sb.AppendLine("            Log($\"当前机器码: {_machineCode}\");");
+            sb.AppendLine("");
+            sb.AppendLine("            // 检查是否已激活");
+            sb.AppendLine("            if (!IsActivated())");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Log(\"未激活，显示激活窗口\");");
+            sb.AppendLine("                using (var activateForm = new ActivationForm(_machineCode, GetPublicKey()))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    if (activateForm.ShowDialog() != DialogResult.OK)");
+            sb.AppendLine("                    {");
+            sb.AppendLine("                        Log(\"用户取消激活，退出\");");
+            sb.AppendLine("                        return;");
+            sb.AppendLine("                    }");
+            sb.AppendLine("                }");
+            sb.AppendLine("                Log(\"激活成功\");");
+            sb.AppendLine("            }");
+            sb.AppendLine("            else");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Log(\"已激活，验证许可证\");");
+            sb.AppendLine("                if (!ValidateLicense())");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    Log(\"许可证验证失败\");");
+            sb.AppendLine("                    MessageBox.Show(\"许可证已过期或无效，请重新激活。\", \"许可证验证失败\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("                    // 删除许可证，要求重新激活");
+            sb.AppendLine("                    DeleteLicense();");
+            sb.AppendLine("                    return;");
+            sb.AppendLine("                }");
+            sb.AppendLine("                Log(\"许可证验证通过\");");
+            sb.AppendLine("            }");
+            sb.AppendLine("");
+            sb.AppendLine("            // 启动原程序");
+            sb.AppendLine("            Log(\"启动原程序\");");
+            sb.AppendLine("            LaunchOriginalProgram();");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static string GetMachineCode()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                string cpu = GetWmi(\"Win32_Processor\", \"ProcessorId\");");
+            sb.AppendLine("                string board = GetWmi(\"Win32_BaseBoard\", \"SerialNumber\");");
+            sb.AppendLine("                string disk = GetWmi(\"Win32_LogicalDisk\", \"VolumeSerialNumber\", \"DeviceID='C:'\");");
+            sb.AppendLine("                string raw = $\"{cpu}|{board}|{disk}\";");
+            sb.AppendLine("                return Sha256(raw);");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch");
+            sb.AppendLine("            {");
+            sb.AppendLine("                var fallback = Environment.MachineName + Environment.UserName;");
+            sb.AppendLine("                using (var sha = SHA256.Create())");
+            sb.AppendLine("                    return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(fallback))).Replace(\"-\", \"\");");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        static string GetWmi(string cls, string prop, string where = null)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                var q = where == null ? $\"SELECT {prop} FROM {cls}\" : $\"SELECT {prop} FROM {cls} WHERE {where}\";");
+            sb.AppendLine("                using (var searcher = new ManagementObjectSearcher(q))");
+            sb.AppendLine("                    foreach (ManagementObject mo in searcher.Get())");
+            sb.AppendLine("                        return mo[prop]?.ToString()?.Trim();");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch { }");
+            sb.AppendLine("            return \"\";");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        static string Sha256(string s)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            using (var sha = SHA256.Create())");
+            sb.AppendLine("                return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(s ?? \"\"))).Replace(\"-\", \"\");");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static RSA GetPublicKey()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            string keyXml = Encoding.UTF8.GetString(Convert.FromBase64String(EmbeddedPublicKey));");
+            sb.AppendLine("            var rsa = RSA.Create();");
+            sb.AppendLine("            rsa.FromXmlString(keyXml);");
+            sb.AppendLine("            return rsa;");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static RSA GetPrivateKey()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            string keyXml = Encoding.UTF8.GetString(Convert.FromBase64String(EmbeddedPrivateKey));");
+            sb.AppendLine("            var rsa = RSA.Create();");
+            sb.AppendLine("            rsa.FromXmlString(keyXml);");
+            sb.AppendLine("            return rsa;");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static bool IsActivated()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                string appDir = Path.GetDirectoryName(Application.ExecutablePath);");
+            sb.AppendLine("                string licPath = Path.Combine(appDir, \"config\", \"license.lic\");");
+            sb.AppendLine("                return File.Exists(licPath);");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch { return false; }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static void DeleteLicense()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                string appDir = Path.GetDirectoryName(Application.ExecutablePath);");
+            sb.AppendLine("                string licPath = Path.Combine(appDir, \"config\", \"license.lic\");");
+            sb.AppendLine("                if (File.Exists(licPath)) File.Delete(licPath);");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch { }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static bool ValidateLicense()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                string appDir = Path.GetDirectoryName(Application.ExecutablePath);");
+            sb.AppendLine("                string licPath = Path.Combine(appDir, \"config\", \"license.lic\");");
+            sb.AppendLine("                if (!File.Exists(licPath)) return false;");
+            sb.AppendLine("");
+            sb.AppendLine("                string licJson = File.ReadAllText(licPath);");
+            sb.AppendLine("                var lic = ParseLicense(licJson);");
+            sb.AppendLine("                if (lic == null) return false;");
+            sb.AppendLine("");
+            sb.AppendLine("                // 验证机器码匹配");
+            sb.AppendLine("                if (!string.Equals(lic.machine, _machineCode, StringComparison.OrdinalIgnoreCase))");
+            sb.AppendLine("                    return false;");
+            sb.AppendLine("");
+            sb.AppendLine("                // 验证签名");
+            sb.AppendLine("                string signData = $\"{lic.machine}|{lic.days}|{lic.licId}\";");
+            sb.AppendLine("                using (var rsa = GetPublicKey())");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    byte[] data = Encoding.UTF8.GetBytes(signData);");
+            sb.AppendLine("                    byte[] sign = Convert.FromBase64String(lic.sign);");
+            sb.AppendLine("                    if (!rsa.VerifyData(data, sign, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))");
+            sb.AppendLine("                        return false;");
+            sb.AppendLine("                }");
+            sb.AppendLine("");
+            sb.AppendLine("                // 验证有效期");
+            sb.AppendLine("                DateTime createTime = File.GetCreationTime(licPath);");
+            sb.AppendLine("                DateTime expireDate = createTime.AddDays(int.Parse(lic.days));");
+            sb.AppendLine("                return DateTime.Now <= expireDate;");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch { return false; }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static License ParseLicense(string json)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                return System.Text.Json.JsonSerializer.Deserialize<License>(json);");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch { return null; }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static string EncryptString(string plainText, string key)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            using (var aes = Aes.Create())");
+            sb.AppendLine("            {");
+            sb.AppendLine("                byte[] keyBytes = Encoding.UTF8.GetBytes(key.PadRight(32).Substring(0, 32));");
+            sb.AppendLine("                aes.Key = keyBytes;");
+            sb.AppendLine("                aes.GenerateIV();");
+            sb.AppendLine("                using (var encryptor = aes.CreateEncryptor())");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);");
+            sb.AppendLine("                    byte[] encrypted = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);");
+            sb.AppendLine("                    return Convert.ToBase64String(aes.IV.Concat(encrypted).ToArray());");
+            sb.AppendLine("                }");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static string DecryptString(string cipherText, string key)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                byte[] fullBytes = Convert.FromBase64String(cipherText);");
+            sb.AppendLine("                byte[] iv = fullBytes.Take(16).ToArray();");
+            sb.AppendLine("                byte[] encrypted = fullBytes.Skip(16).ToArray();");
+            sb.AppendLine("                using (var aes = Aes.Create())");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    byte[] keyBytes = Encoding.UTF8.GetBytes(key.PadRight(32).Substring(0, 32));");
+            sb.AppendLine("                    aes.Key = keyBytes;");
+            sb.AppendLine("                    aes.IV = iv;");
+            sb.AppendLine("                    using (var decryptor = aes.CreateDecryptor())");
+            sb.AppendLine("                    {");
+            sb.AppendLine("                        byte[] decrypted = decryptor.TransformFinalBlock(encrypted, 0, encrypted.Length);");
+            sb.AppendLine("                        return Encoding.UTF8.GetString(decrypted);");
+            sb.AppendLine("                    }");
+            sb.AppendLine("                }");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch { return null; }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static void LaunchOriginalProgram()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                string appDir = Path.GetDirectoryName(Application.ExecutablePath);");
+            sb.AppendLine("                string tempDir = Path.Combine(Path.GetTempPath(), $\"ProtectedApp_{Guid.NewGuid():N}\");");
+            sb.AppendLine("                Directory.CreateDirectory(tempDir);");
+            sb.AppendLine("");
+            sb.AppendLine("                // 解密并保存原程序");
+            sb.AppendLine("                byte[] exeBytes = Convert.FromBase64String(EmbeddedOriginalExe);");
+            sb.AppendLine("                string exePath = Path.Combine(tempDir, \"Original.exe\");");
+            sb.AppendLine("                File.WriteAllBytes(exePath, exeBytes);");
+            sb.AppendLine("");
+            sb.AppendLine("                // 启动原程序");
+            sb.AppendLine("                var psi = new System.Diagnostics.ProcessStartInfo");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    FileName = exePath,");
+            sb.AppendLine("                    WorkingDirectory = tempDir,");
+            sb.AppendLine("                    UseShellExecute = false");
+            sb.AppendLine("                };");
+            sb.AppendLine("                var process = System.Diagnostics.Process.Start(psi);");
+            sb.AppendLine("                if (process != null)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    process.WaitForExit();");
+            sb.AppendLine("                }");
+            sb.AppendLine("");
+            sb.AppendLine("                // 清理临时文件");
+            sb.AppendLine("                try { Directory.Delete(tempDir, true); } catch { }");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch (Exception ex)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Log($\"启动原程序失败: {ex.Message}\");");
+            sb.AppendLine("                MessageBox.Show($\"启动失败: {ex.Message}\", \"错误\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("    }");
+            sb.AppendLine("");
+            sb.AppendLine("    public class License");
+            sb.AppendLine("    {");
+            sb.AppendLine("        public string machine { get; set; }");
+            sb.AppendLine("        public string days { get; set; }");
+            sb.AppendLine("        public string licId { get; set; }");
+            sb.AppendLine("        public string sign { get; set; }");
+            sb.AppendLine("    }");
+            sb.AppendLine("");
+            sb.AppendLine("    // 激活窗口");
+            sb.AppendLine("    public class ActivationForm : Form");
+            sb.AppendLine("    {");
+            sb.AppendLine("        private string _machineCode;");
+            sb.AppendLine("        private RSA _publicKey;");
+            sb.AppendLine("        private TextBox _txtCardKey;");
+            sb.AppendLine("");
+            sb.AppendLine("        public ActivationForm(string machineCode, RSA publicKey)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            _machineCode = machineCode;");
+            sb.AppendLine("            _publicKey = publicKey;");
+            sb.AppendLine("            InitializeComponent();");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private void InitializeComponent()");
+            sb.AppendLine("        {");
+            sb.AppendLine("            Text = \"软件激活\";");
+            sb.AppendLine("            Size = new System.Drawing.Size(500, 280);");
+            sb.AppendLine("            FormBorderStyle = FormBorderStyle.FixedDialog;");
+            sb.AppendLine("            MaximizeBox = false;");
+            sb.AppendLine("            MinimizeBox = false;");
+            sb.AppendLine("            StartPosition = FormStartPosition.CenterScreen;");
+            sb.AppendLine("");
+            sb.AppendLine("            var lblInfo = new Label");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Text = \"请输入卡密进行激活：\",");
+            sb.AppendLine("                Location = new System.Drawing.Point(20, 20),");
+            sb.AppendLine("                AutoSize = true");
+            sb.AppendLine("            };");
+            sb.AppendLine("");
+            sb.AppendLine("            var lblMachine = new Label");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Text = $\"机器码: {_machineCode}\",");
+            sb.AppendLine("                Location = new System.Drawing.Point(20, 50),");
+            sb.AppendLine("                AutoSize = true,");
+            sb.AppendLine("                ForeColor = System.Drawing.Color.Gray");
+            sb.AppendLine("            };");
+            sb.AppendLine("");
+            sb.AppendLine("            _txtCardKey = new TextBox");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Location = new System.Drawing.Point(20, 85),");
+            sb.AppendLine("                Size = new System.Drawing.Size(440, 25)");
+            sb.AppendLine("            };");
+            sb.AppendLine("");
+            sb.AppendLine("            var btnActivate = new Button");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Text = \"激活\",");
+            sb.AppendLine("                Location = new System.Drawing.Point(20, 130),");
+            sb.AppendLine("                Size = new System.Drawing.Size(100, 30),");
+            sb.AppendLine("                DialogResult = DialogResult.OK");
+            sb.AppendLine("            };");
+            sb.AppendLine("            btnActivate.Click += BtnActivate_Click;");
+            sb.AppendLine("");
+            sb.AppendLine("            var btnCancel = new Button");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Text = \"取消\",");
+            sb.AppendLine("                Location = new System.Drawing.Point(140, 130),");
+            sb.AppendLine("                Size = new System.Drawing.Size(100, 30),");
+            sb.AppendLine("                DialogResult = DialogResult.Cancel");
+            sb.AppendLine("            };");
+            sb.AppendLine("");
+            sb.AppendLine("            var lblTip = new Label");
+            sb.AppendLine("            {");
+            sb.AppendLine("                Text = \"提示：请使用LicenseMaker根据机器码生成卡密\",");
+            sb.AppendLine("                Location = new System.Drawing.Point(20, 180),");
+            sb.AppendLine("                AutoSize = true,");
+            sb.AppendLine("                ForeColor = System.Drawing.Color.Gray");
+            sb.AppendLine("            };");
+            sb.AppendLine("");
+            sb.AppendLine("            Controls.Add(lblInfo);");
+            sb.AppendLine("            Controls.Add(lblMachine);");
+            sb.AppendLine("            Controls.Add(_txtCardKey);");
+            sb.AppendLine("            Controls.Add(btnActivate);");
+            sb.AppendLine("            Controls.Add(btnCancel);");
+            sb.AppendLine("            Controls.Add(lblTip);");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private void BtnActivate_Click(object sender, EventArgs e)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            string cardKey = _txtCardKey.Text.Trim();");
+            sb.AppendLine("            if (string.IsNullOrEmpty(cardKey))");
+            sb.AppendLine("            {");
+            sb.AppendLine("                MessageBox.Show(\"请输入卡密\", \"提示\", MessageBoxButtons.OK, MessageBoxIcon.Warning);");
+            sb.AppendLine("                DialogResult = DialogResult.None;");
+            sb.AppendLine("                return;");
+            sb.AppendLine("            }");
+            sb.AppendLine("");
+            sb.AppendLine("            // 验证卡密");
+            sb.AppendLine("            if (ValidateAndSaveLicense(cardKey))");
+            sb.AppendLine("            {");
+            sb.AppendLine("                MessageBox.Show(\"激活成功！\", \"成功\", MessageBoxButtons.OK, MessageBoxIcon.Information);");
+            sb.AppendLine("                DialogResult = DialogResult.OK;");
+            sb.AppendLine("            }");
+            sb.AppendLine("            else");
+            sb.AppendLine("            {");
+            sb.AppendLine("                MessageBox.Show(\"卡密无效或已过期，请检查后重试。\", \"激活失败\", MessageBoxButtons.OK, MessageBoxIcon.Error);");
+            sb.AppendLine("                DialogResult = DialogResult.None;");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private bool ValidateAndSaveLicense(string cardKey)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                // 解密卡密");
+            sb.AppendLine("                string key = GenerateEncryptionKey(_machineCode);");
+            sb.AppendLine("                string licJson = DecryptCardKey(cardKey, key);");
+            sb.AppendLine("                if (string.IsNullOrEmpty(licJson)) return false;");
+            sb.AppendLine("");
+            sb.AppendLine("                var lic = System.Text.Json.JsonSerializer.Deserialize<License>(licJson);");
+            sb.AppendLine("                if (lic == null) return false;");
+            sb.AppendLine("");
+            sb.AppendLine("                // 验证机器码");
+            sb.AppendLine("                if (!string.Equals(lic.machine, _machineCode, StringComparison.OrdinalIgnoreCase))");
+            sb.AppendLine("                    return false;");
+            sb.AppendLine("");
+            sb.AppendLine("                // 验证签名");
+            sb.AppendLine("                string signData = $\"{lic.machine}|{lic.days}|{lic.licId}\";");
+            sb.AppendLine("                byte[] data = Encoding.UTF8.GetBytes(signData);");
+            sb.AppendLine("                byte[] sign = Convert.FromBase64String(lic.sign);");
+            sb.AppendLine("                if (!_publicKey.VerifyData(data, sign, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))");
+            sb.AppendLine("                    return false;");
+            sb.AppendLine("");
+            sb.AppendLine("                // 保存许可证");
+            sb.AppendLine("                string appDir = Path.GetDirectoryName(Application.ExecutablePath);");
+            sb.AppendLine("                string licDir = Path.Combine(appDir, \"config\");");
+            sb.AppendLine("                Directory.CreateDirectory(licDir);");
+            sb.AppendLine("                string licPath = Path.Combine(licDir, \"license.lic\");");
+            sb.AppendLine("                File.WriteAllText(licPath, licJson);");
+            sb.AppendLine("");
+            sb.AppendLine("                return true;");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch { return false; }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static string GenerateEncryptionKey(string machineCode)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            using (var sha = SHA256.Create())");
+            sb.AppendLine("            {");
+            sb.AppendLine("                var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(machineCode));");
+            sb.AppendLine("                return BitConverter.ToString(hash).Replace(\"-\", \"\").Substring(0, 32);");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine("");
+            sb.AppendLine("        private static string DecryptCardKey(string cardKey, string key)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            try");
+            sb.AppendLine("            {");
+            sb.AppendLine("                byte[] fullBytes = Convert.FromBase64String(cardKey);");
+            sb.AppendLine("                byte[] iv = fullBytes.Take(16).ToArray();");
+            sb.AppendLine("                byte[] encrypted = fullBytes.Skip(16).ToArray();");
+            sb.AppendLine("                using (var aes = Aes.Create())");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    byte[] keyBytes = Encoding.UTF8.GetBytes(key.PadRight(32).Substring(0, 32));");
+            sb.AppendLine("                    aes.Key = keyBytes;");
+            sb.AppendLine("                    aes.IV = iv;");
+            sb.AppendLine("                    using (var decryptor = aes.CreateDecryptor())");
+            sb.AppendLine("                    {");
+            sb.AppendLine("                        byte[] decrypted = decryptor.TransformFinalBlock(encrypted, 0, encrypted.Length);");
+            sb.AppendLine("                        return Encoding.UTF8.GetString(decrypted);");
+            sb.AppendLine("                    }");
+            sb.AppendLine("                }");
+            sb.AppendLine("            }");
+            sb.AppendLine("            catch { return null; }");
+            sb.AppendLine("        }");
+            sb.AppendLine("    }");
+            sb.AppendLine("}");
+
+            return sb.ToString();
         }
 
         /// <summary>
